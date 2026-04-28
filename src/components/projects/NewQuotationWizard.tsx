@@ -109,6 +109,7 @@ interface Props {
 
 export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [site, setSite] = useState<SiteState>(emptySite());
   const [services, setServices] = useState<ServicesState>(emptyServices());
