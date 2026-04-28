@@ -84,6 +84,7 @@ export default function SupplierOrders() {
   const [isSaving, setIsSaving] = useState(false);
   const [selectedHwIds, setSelectedHwIds] = useState<string[]>([]);
   const [showAllHardware, setShowAllHardware] = useState(false);
+  const [outboundOriginFilter, setOutboundOriginFilter] = useState<string>("ALL");
 
   // Form States
   const initialPoForm = {
@@ -109,7 +110,8 @@ export default function SupplierOrders() {
     customs_cost: "0",
     currency: "EUR",
     status: "in_transit",
-    notes: ""
+    notes: "",
+    shipped_date: ""
   };
 
   const [poForm, setPoForm] = useState(initialPoForm);
@@ -127,7 +129,7 @@ export default function SupplierOrders() {
     try {
       const [poRes, shipRes, locRes, hwRes, siteRes] = await Promise.all([
         (supabase as any).from("ops_purchase_orders").select("*").order("created_at", { ascending: false }),
-        (supabase as any).from("ops_shipments").select("*, origin:ops_locations!origin_location_id(name), destination:ops_locations!destination_location_id(name)").order("created_at", { ascending: false }),
+        (supabase as any).from("ops_shipments").select("*, origin:ops_locations!origin_location_id(name), destination:ops_locations!destination_location_id(name), ops_hardware_movements(hardwares(hardware_type))").order("created_at", { ascending: false }),
         (supabase as any).from("ops_locations").select("*").order("name"),
         supabase.from("hardwares").select("*, purchase_order:ops_purchase_orders(*)").order("created_at", { ascending: false }),
         supabase.from("sites").select("*")
@@ -193,7 +195,8 @@ export default function SupplierOrders() {
       customs_cost: String(ship.customs_cost || 0),
       currency: ship.currency || "EUR",
       status: ship.status || "in_transit",
-      notes: ship.notes || ""
+      notes: ship.notes || "",
+      shipped_date: ship.shipped_date || ""
     });
     
     // Fetch associated hardwares for this shipment
@@ -239,7 +242,8 @@ export default function SupplierOrders() {
         ...shipmentForm,
         total_shipping_cost: parseFloat(shipmentForm.total_shipping_cost) || 0,
         customs_cost: parseFloat(shipmentForm.customs_cost) || 0,
-        purchase_order_id: shipmentForm.purchase_order_id || null
+        purchase_order_id: shipmentForm.purchase_order_id || null,
+        shipped_date: shipmentForm.shipped_date || null
       };
 
       let shipId = editingShipmentId;
@@ -303,8 +307,19 @@ export default function SupplierOrders() {
   }, [purchaseOrders, portfolioFilter, searchQuery]);
 
   const internalShipments = useMemo(() => {
-    return shipments.filter(s => s.shipment_type !== 'inbound' || !s.purchase_order_id);
+    return shipments.filter(s => s.shipment_type === 'internal');
   }, [shipments]);
+
+  const outboundShipments = useMemo(() => {
+    return shipments.filter(s => {
+      if (s.shipment_type !== 'outbound') return false;
+      const matchesSearch = !searchQuery || s.destination?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+      const isFulfilled = s.status === 'delivered';
+      const matchesSubTab = outboundSubTab === 'shipped' ? isFulfilled : !isFulfilled;
+      const matchesOrigin = outboundOriginFilter === "ALL" || s.origin_location_id === outboundOriginFilter;
+      return matchesSearch && matchesSubTab && matchesOrigin;
+    });
+  }, [shipments, searchQuery, outboundSubTab, outboundOriginFilter]);
 
   const selectableHardware = useMemo(() => {
     return hardwares.filter(h => {
@@ -415,7 +430,14 @@ export default function SupplierOrders() {
                             <div key={s.id} className="bg-white border border-slate-100 rounded-lg p-3 flex items-center justify-between shadow-sm">
                               <div className="flex items-center gap-4">
                                 <div className="h-8 w-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400"><Truck className="h-4 w-4" /></div>
-                                <div><p className="text-xs font-bold text-slate-700">{s.origin?.name || "N/A"} → {s.destination?.name || "N/A"}</p><p className="text-[9px] uppercase font-bold text-slate-400">{s.carrier_name || "Unknown Carrier"}</p></div>
+                                <div>
+                                  <p className="text-xs font-bold text-slate-700">{s.origin?.name || "N/A"} → {s.destination?.name || "N/A"}</p>
+                                  <div className="flex gap-2 items-center">
+                                    <p className="text-[9px] uppercase font-bold text-slate-400">{s.carrier_name || "Unknown Carrier"}</p>
+                                    {s.shipped_date && <span className="text-[9px] font-bold text-[#009193]">Shipped: {format(new Date(s.shipped_date), "dd MMM yy")}</span>}
+                                    <span className="text-[9px] font-bold text-slate-400">({s.ops_hardware_movements?.length || 0} units)</span>
+                                  </div>
+                                </div>
                               </div>
                               <div className="flex items-center gap-4">
                                 <div className="text-right"><p className="text-[10px] font-mono font-bold text-slate-600">{s.currency} {Number(s.total_shipping_cost).toLocaleString()}</p></div>
@@ -440,58 +462,99 @@ export default function SupplierOrders() {
               <div className="relative w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" /><Input placeholder="Search moves..." className="pl-8 h-8 text-xs" /></div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {internalShipments.map(s => (
+              {internalShipments.map(s => {
+                const hwCount = s.ops_hardware_movements?.length || 0;
+                const types = s.ops_hardware_movements?.reduce((acc: any, m: any) => {
+                  const type = m.hardwares?.hardware_type?.toUpperCase() || 'UNKNOWN';
+                  acc[type] = (acc[type] || 0) + 1;
+                  return acc;
+                }, {});
+                const typeStrings = types ? Object.entries(types).map(([k, v]) => `${v} ${k}`) : [];
+
+                return (
                 <div key={s.id} className="premium-card glass p-4 border border-slate-100 hover:border-[#009193]/30 transition-all cursor-pointer group" onClick={() => handleEditShipment(s)}>
                   <div className="flex justify-between items-start mb-4">
                     <Badge variant="outline" className="text-[9px] uppercase font-bold text-[#009193] bg-[#009193]/5 border-[#009193]/10">{s.shipment_type?.replace('_',' ')}</Badge>
-                    <p className="text-[10px] font-mono text-slate-400">{format(new Date(s.created_at), "dd MMM yyyy")}</p>
+                    <div className="text-right">
+                      {s.shipped_date && <p className="text-[10px] font-mono text-[#009193] font-bold">Shipped: {format(new Date(s.shipped_date), "dd MMM yyyy")}</p>}
+                      <p className="text-[9px] font-mono text-slate-400">Created: {format(new Date(s.created_at), "dd MMM yyyy")}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 mb-4">
                     <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center text-[#009193] group-hover:bg-[#009193] group-hover:text-white transition-all"><Truck className="h-5 w-5" /></div>
                     <div><p className="text-xs font-bold text-slate-800">{s.origin?.name || "Office"} → {s.destination?.name || "Target"}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{s.carrier_name || "Self Delivery"}</p></div>
                   </div>
                   <div className="flex justify-between items-center pt-3 border-t border-slate-50">
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><History className="h-3 w-3" /> View units...</div>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><History className="h-3 w-3" /> {hwCount} Units</div>
+                      {typeStrings.length > 0 && <span className="text-[9px] font-bold text-[#009193]">{typeStrings.join(', ')}</span>}
+                    </div>
                     <Badge className={cn("text-[9px] uppercase border-none px-2", s.status === 'delivered' ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600")}>{s.status}</Badge>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           </TabsContent>
           
           {/* OUTBOUND TAB */}
           <TabsContent value="outbound" className="mt-0 space-y-4">
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-              <Tabs value={outboundSubTab} onValueChange={(v)=>setParam("sub", v)} className="w-fit">
-                <TabsList className="bg-slate-100 p-1 h-9">
-                  <TabsTrigger value="awaiting" className="text-xs px-4 data-[state=active]:bg-white">Awaiting Dispatch ({sites.length} Sites)</TabsTrigger>
-                  <TabsTrigger value="shipped" className="text-xs px-4 data-[state=active]:bg-white">Fulfilled</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <div className="relative w-full md:w-80"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Search project sites..." className="pl-9 h-9 text-xs" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
-            </div>
-            <div className="space-y-3">
-              {outboundProjects.map((project: any) => (
-                <div key={project.id} className="premium-card glass border border-slate-100 overflow-hidden">
-                  <div onClick={() => setExpandedGroups(prev => prev.includes(project.id) ? prev.filter(p => p !== project.id) : [...prev, project.id])} className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-colors">
-                    <div className="flex items-center gap-4"><div className="h-10 w-10 rounded-xl bg-[#009193]/10 flex items-center justify-center text-[#009193]"><MapPin className="h-5 w-5" /></div><div><h4 className="font-bold text-slate-800 tracking-tight">{project.name}</h4><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">{project.hardwares.length} Units Assigned</p></div></div>
-                    <div className="flex items-center gap-3">{project.categories.map((cat: string) => <Badge key={cat} className="bg-[#009193]/5 text-[#009193] border-[#009193]/20 text-[9px] uppercase">{cat}: {project.hardwares.filter((h: any) => h.category === cat).length}</Badge>)}{expandedGroups.includes(project.id) ? <ChevronDown className="h-5 w-5 text-slate-400" /> : <ChevronRight className="h-5 w-5 text-slate-400" />}</div>
-                  </div>
-                  {expandedGroups.includes(project.id) && (
-                    <div className="border-t border-slate-50 bg-slate-50/20 p-4 space-y-4">
-                      {project.categories.map((cat: string) => (
-                        <div key={cat} className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden">
-                          <div className="bg-slate-50/50 px-4 py-2 border-b border-slate-100"><span className="text-[10px] font-bold uppercase tracking-widest text-[#009193] flex items-center gap-2"><Layers className="h-3 w-3" /> {cat} Portfolio</span></div>
-                          <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-slate-50/30"><th className="text-left p-3 uppercase font-bold text-slate-400 text-[10px]">SN</th><th className="text-left p-3 uppercase font-bold text-slate-400 text-[10px]">Logistics Ledger</th><th className="text-right p-3 uppercase font-bold text-slate-400 text-[10px]">Status</th></tr></thead>
-                            <tbody>{project.hardwares.filter((h: any) => h.category === cat).map((hw: any) => (
-                              <tr key={hw.id} onClick={() => { setSelectedHardware(hw); setSearchParams(p=>{p.set("id",hw.id); return p;}); }} className="border-b last:border-b-0 hover:bg-[#009193]/5 transition-colors cursor-pointer"><td className="p-3 font-mono font-bold text-[#009193]">{hw.device_id}</td><td className="p-3"><div className="flex items-center gap-2 text-xs text-slate-400"><History className="h-3 w-3" /> <span>View audit trail...</span></div></td><td className="p-3 text-right"><Badge className={cn("text-[9px] uppercase border-none", hw.fulfillment_status === 'Allocated' ? "bg-blue-50 text-blue-600" : "bg-green-50 text-green-600")}>{hw.fulfillment_status}</Badge></td></tr>
-                            ))}</tbody></table></div>
-                        </div>
+              <div className="flex items-center gap-4">
+                <Tabs value={outboundSubTab} onValueChange={(v)=>setParam("sub", v)} className="w-fit">
+                  <TabsList className="bg-slate-100 p-1 h-9">
+                    <TabsTrigger value="awaiting" className="text-xs px-4 data-[state=active]:bg-white">Awaiting Dispatch ({shipments.filter(s => s.shipment_type === 'outbound' && s.status !== 'delivered').length})</TabsTrigger>
+                    <TabsTrigger value="shipped" className="text-xs px-4 data-[state=active]:bg-white">Fulfilled ({shipments.filter(s => s.shipment_type === 'outbound' && s.status === 'delivered').length})</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                {outboundSubTab === 'shipped' && (
+                  <Select value={outboundOriginFilter} onValueChange={setOutboundOriginFilter}>
+                    <SelectTrigger className="h-9 w-[180px] text-xs bg-slate-50 border-slate-200">
+                      <SelectValue placeholder="Origin Office" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All Origins</SelectItem>
+                      {internalOffices.map(off => (
+                        <SelectItem key={off.id} value={off.id}>{off.name}</SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <div className="relative w-full md:w-80"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Search destinations..." className="pl-9 h-9 text-xs" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {outboundShipments.map(s => {
+                const hwCount = s.ops_hardware_movements?.length || 0;
+                const types = s.ops_hardware_movements?.reduce((acc: any, m: any) => {
+                  const type = m.hardwares?.hardware_type?.toUpperCase() || 'UNKNOWN';
+                  acc[type] = (acc[type] || 0) + 1;
+                  return acc;
+                }, {});
+                const typeStrings = types ? Object.entries(types).map(([k, v]) => `${v} ${k}`) : [];
+
+                return (
+                  <div key={s.id} className="premium-card glass p-4 border border-slate-100 hover:border-[#009193]/30 transition-all cursor-pointer group" onClick={() => handleEditShipment(s)}>
+                    <div className="flex justify-between items-start mb-4">
+                      <Badge variant="outline" className="text-[9px] uppercase font-bold text-[#009193] bg-[#009193]/5 border-[#009193]/10">OUTBOUND</Badge>
+                      <div className="text-right">
+                        {s.shipped_date && <p className="text-[10px] font-mono text-[#009193] font-bold">Shipped: {format(new Date(s.shipped_date), "dd MMM yyyy")}</p>}
+                        <p className="text-[9px] font-mono text-slate-400">Created: {format(new Date(s.created_at), "dd MMM yyyy")}</p>
+                      </div>
                     </div>
-                  )}
-                </div>
-              ))}
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center text-[#009193] group-hover:bg-[#009193] group-hover:text-white transition-all"><Truck className="h-5 w-5" /></div>
+                      <div><p className="text-xs font-bold text-slate-800">{s.origin?.name || "Office"} → {s.destination?.name || "Target"}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{s.carrier_name || "Self Delivery"}</p></div>
+                    </div>
+                    <div className="flex justify-between items-center pt-3 border-t border-slate-50">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><History className="h-3 w-3" /> {hwCount} Units</div>
+                        {typeStrings.length > 0 && <span className="text-[9px] font-bold text-[#009193]">{typeStrings.join(', ')}</span>}
+                      </div>
+                      <Badge className={cn("text-[9px] uppercase border-none px-2", s.status === 'delivered' ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600")}>{s.status}</Badge>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </TabsContent>
         </Tabs>
@@ -516,7 +579,10 @@ export default function SupplierOrders() {
                   <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Freight Cost</Label><Input type="number" className="h-9 text-xs" value={shipmentForm.total_shipping_cost} onChange={(e)=>setShipmentForm({...shipmentForm, total_shipping_cost: e.target.value})} /></div>
                   <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Status</Label><Select value={shipmentForm.status} onValueChange={(v)=>setShipmentForm({...shipmentForm, status: v})}><SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger><SelectContent>{SHIPMENT_STATUSES.map(s=><SelectItem key={s} value={s}>{s.replace('_',' ')}</SelectItem>)}</SelectContent></Select></div>
                </div>
-               <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Tracking Number</Label><Input placeholder="AB1234567" className="h-9 text-xs" value={shipmentForm.tracking_number} onChange={(e)=>setShipmentForm({...shipmentForm, tracking_number: e.target.value})} /></div>
+               <div className="grid grid-cols-2 gap-4">
+                 <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Tracking Number</Label><Input placeholder="AB1234567" className="h-9 text-xs" value={shipmentForm.tracking_number} onChange={(e)=>setShipmentForm({...shipmentForm, tracking_number: e.target.value})} /></div>
+                 <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Shipped Date</Label><Input type="date" className="h-9 text-xs" value={shipmentForm.shipped_date} onChange={(e)=>setShipmentForm({...shipmentForm, shipped_date: e.target.value})} /></div>
+               </div>
                <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Notes</Label><Textarea placeholder="Operational details..." className="h-20 text-xs" value={shipmentForm.notes} onChange={(e)=>setShipmentForm({...shipmentForm, notes: e.target.value})} /></div>
             </div>
 
