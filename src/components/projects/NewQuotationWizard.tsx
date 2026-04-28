@@ -2,6 +2,8 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useHoldings, useBrands, useSites } from "@/hooks/useProjectDetails";
+import { useAuth } from "@/contexts/AuthContext";
+import { NewHoldingButton, NewBrandButton } from "@/components/projects/BrandHoldingCreator";
 import { RATING_SYSTEMS, RATING_SUBTYPES, type RatingSystem } from "@/data/ratingSubtypes";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
