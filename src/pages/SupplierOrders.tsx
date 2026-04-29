@@ -41,8 +41,22 @@ import {
   Activity,
   ArrowUpRight,
   CheckCircle2,
-  X
+  X,
+  TrendingUp,
+  Map as MapIcon,
+  Minus
 } from "lucide-react";
+import { 
+  MapContainer, 
+  TileLayer, 
+  CircleMarker, 
+  Polyline, 
+  Tooltip,
+  GeoJSON
+} from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+
+const WORLD_GEO_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json";
 
 const CURRENCIES = [
   { code: 'EUR', symbol: '€' },
@@ -50,7 +64,35 @@ const CURRENCIES = [
   { code: 'CNY', symbol: '¥' }
 ];
 
-const SHIPMENT_STATUSES = ["in_transit", "customs", "delivered", "cancelled"];
+const SHIPMENT_STATUSES = ["upcoming", "in_transit", "delivered", "cancelled"];
+
+function StatCard({ number, label, change, color, icon: Icon }: any) {
+  const bg = color === "black" ? "bg-zinc-900 text-white" :
+             color === "teal" ? "bg-[#009193] text-white" : "bg-white border border-slate-200";
+
+  return (
+    <div className={cn(bg, "rounded-3xl p-6 shadow-sm flex-1 min-w-[240px] relative overflow-hidden group transition-all hover:scale-[1.02]")}>
+      <div className="flex justify-between items-start relative z-10">
+        <div>
+          <div className="text-5xl font-semibold tracking-tighter tabular-nums">{number}</div>
+          <div className={cn("text-xs font-bold uppercase tracking-wider mt-2 opacity-60", color === "teal" ? "text-white/80" : "")}>{label}</div>
+        </div>
+        <div className={cn("p-3 rounded-2xl", color === "black" ? "bg-white/10" : "bg-black/5")}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+      {change && (
+        <div className="mt-4 flex items-center gap-1.5 relative z-10">
+          <div className={cn("flex items-center gap-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full", 
+            color === "teal" ? "bg-white/20 text-white" : "bg-[#009193]/20 text-[#009193]")}>
+            <TrendingUp className="h-3 w-3" /> {change}
+          </div>
+          <span className="text-[10px] opacity-40 font-bold uppercase tracking-tighter">vs last month</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SupplierOrders() {
   const { user } = useAuth();
@@ -61,9 +103,10 @@ export default function SupplierOrders() {
   const [locations, setLocations] = useState<any[]>([]);
   const [hardwares, setHardwares] = useState<any[]>([]);
   const [sites, setSites] = useState<any[]>([]);
+  const [worldGeo, setWorldGeo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  const activeTab = searchParams.get("tab") || "inbound";
+  const activeTab = searchParams.get("tab") || "overview";
   const outboundSubTab = searchParams.get("sub") || "awaiting";
   const portfolioFilter = (searchParams.get("portfolio") || "ALL").toUpperCase();
   const selectedId = searchParams.get("id");
@@ -85,6 +128,7 @@ export default function SupplierOrders() {
   const [selectedHwIds, setSelectedHwIds] = useState<string[]>([]);
   const [showAllHardware, setShowAllHardware] = useState(false);
   const [outboundOriginFilter, setOutboundOriginFilter] = useState<string>("ALL");
+  const [mapZoom, setMapZoom] = useState(1);
 
   // Form States
   const initialPoForm = {
@@ -162,6 +206,13 @@ export default function SupplierOrders() {
   }, [selectedId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    fetch(WORLD_GEO_URL)
+      .then(res => res.json())
+      .then(data => setWorldGeo(data))
+      .catch(err => console.error("GeoJSON load error:", err));
+  }, []);
 
   const setParam = (key: string, val: string) => { setSearchParams(prev => { prev.set(key, val); return prev; }); };
   
@@ -255,6 +306,9 @@ export default function SupplierOrders() {
       }
 
       if (shipId && selectedHwIds.length > 0) {
+        // First, clear existing associations for this shipment to avoid duplicates
+        await (supabase as any).from("ops_hardware_movements").delete().eq("shipment_id", shipId);
+        
         const movements = selectedHwIds.map(hid => ({
           hardware_id: hid,
           shipment_id: shipId,
@@ -345,12 +399,60 @@ export default function SupplierOrders() {
     }).filter(Boolean);
   }, [outboundSubTab, hardwares, sites, portfolioFilter, searchQuery]);
 
+  const mapData = useMemo(() => {
+    const locMarkers: any[] = [];
+    const locMap = new Map();
+
+    locations.forEach(l => {
+      if (l.lat && l.lng) {
+        locMap.set(l.id, { name: l.name, coords: [l.lng, l.lat], type: l.type });
+      }
+    });
+
+    const connections: any[] = [];
+    const countsByLoc: any = {};
+
+    shipments.forEach(s => {
+      const origin = locMap.get(s.origin_location_id);
+      const dest = locMap.get(s.destination_location_id);
+      
+      if (origin && dest) {
+        connections.push({ 
+          from: origin.coords, 
+          to: dest.coords, 
+          status: s.status,
+          type: s.shipment_type
+        });
+        countsByLoc[s.origin_location_id] = (countsByLoc[s.origin_location_id] || 0) + (s.ops_hardware_movements?.length || 0);
+        countsByLoc[s.destination_location_id] = (countsByLoc[s.destination_location_id] || 0) + (s.ops_hardware_movements?.length || 0);
+      }
+    });
+
+    Object.keys(countsByLoc).forEach(id => {
+      const loc = locMap.get(id);
+      if (loc) {
+        locMarkers.push({ ...loc, value: countsByLoc[id], id });
+      }
+    });
+
+    return { markers: locMarkers, connections };
+  }, [shipments, locations]);
+
+  const stats = useMemo(() => {
+    return {
+      upcoming: shipments.filter(s => s.status === 'upcoming').length,
+      pending: shipments.filter(s => s.status === 'in_transit' || s.status === 'customs').length,
+      fulfilled: shipments.filter(s => s.status === 'delivered').length
+    };
+  }, [shipments]);
+
   return (
     <MainLayout title="OPS COMMAND CENTER">
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
           <Tabs value={activeTab} onValueChange={(v)=>setParam("tab", v)} className="w-fit">
             <TabsList className="bg-slate-100/50 p-1 border border-slate-200">
+              <TabsTrigger value="overview" className="flex items-center gap-2 px-6 data-[state=active]:bg-[#009193] data-[state=active]:text-white"><Globe className="h-4 w-4" /><span>Overview</span></TabsTrigger>
               <TabsTrigger value="inbound" className="flex items-center gap-2 px-6 data-[state=active]:bg-[#009193] data-[state=active]:text-white"><ArrowRightLeft className="h-4 w-4" /><span>Inbound Batches</span></TabsTrigger>
               <TabsTrigger value="internal" className="flex items-center gap-2 px-6 data-[state=active]:bg-[#009193] data-[state=active]:text-white"><Activity className="h-4 w-4" /><span>Internal Moves</span></TabsTrigger>
               <TabsTrigger value="outbound" className="flex items-center gap-2 px-6 data-[state=active]:bg-[#009193] data-[state=active]:text-white"><Truck className="h-4 w-4" /><span>Outbound Logistics</span></TabsTrigger>
@@ -377,6 +479,126 @@ export default function SupplierOrders() {
         </div>
 
         <Tabs value={activeTab} className="w-full">
+          {/* OVERVIEW TAB */}
+          <TabsContent value="overview" className="mt-0 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <StatCard number={stats.upcoming} label="Upcoming Shipments" change="" color="black" icon={PackageCheck} />
+              <StatCard number={stats.pending} label="Shipments In Progress" change="" color="white" icon={Clock} />
+              <StatCard number={stats.fulfilled} label="Fulfilled Deliveries" change="" color="teal" icon={CheckCircle2} />
+            </div>
+
+            <div className="bg-white rounded-[32px] p-8 shadow-sm border border-slate-100 relative overflow-hidden">
+              <div className="flex justify-between items-center mb-8 relative z-10">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    <Globe className="h-5 w-5 text-[#009193]" /> Global Logistics Network
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Real-time hardware flow across offices and sites</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-zinc-900" />
+                      <span className="text-[10px] font-bold uppercase text-slate-500 tracking-tighter">Inbound</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-[#009193]" />
+                      <span className="text-[10px] font-bold uppercase text-slate-500 tracking-tighter">Internal</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-amber-500" />
+                      <span className="text-[10px] font-bold uppercase text-slate-500 tracking-tighter">Outbound</span>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="icon" className="rounded-full bg-slate-50 hover:bg-slate-100"><Filter className="h-4 w-4 text-slate-400" /></Button>
+                </div>
+              </div>
+
+            <div className="h-[600px] w-full rounded-3xl overflow-hidden bg-[#f8fafc] border border-slate-100 relative z-0">
+              <MapContainer 
+                center={[20, 0] as any} 
+                zoom={2} 
+                style={{ height: "100%", width: "100%", background: "#f8fafc" }}
+                scrollWheelZoom={true}
+              >
+                {worldGeo && (
+                  <GeoJSON 
+                    data={worldGeo} 
+                    style={() => ({
+                      fillColor: "#e2e8f0",
+                      weight: 0.5,
+                      opacity: 1,
+                      color: "#cbd5e1",
+                      fillOpacity: 0.5
+                    })}
+                  />
+                )}
+
+                {/* Shipment Connections */}
+                {mapData.connections.map((conn, i) => {
+                  const lineColor = conn.type === 'inbound' ? '#18181b' : 
+                                    conn.type === 'outbound' ? '#f59e0b' : 
+                                    '#009193';
+                  const isDelivered = conn.status === 'delivered';
+                  const isInternal = conn.type === 'internal';
+                  
+                  return (
+                    <Polyline
+                      key={`line-${i}`}
+                      positions={[
+                        [conn.from[1], conn.from[0]], 
+                        [conn.to[1], conn.to[0]]
+                      ] as any}
+                      color={lineColor}
+                      weight={1.5}
+                      opacity={isDelivered ? 0.2 : 0.7}
+                      dashArray={isInternal ? "2, 6" : "0"}
+                    >
+                      <Tooltip sticky>
+                        <div className="text-[10px] font-bold uppercase tracking-tight">
+                          <span className={cn("px-2 py-0.5 rounded-full text-white mr-2", 
+                            conn.type === 'inbound' ? 'bg-blue-500' : 
+                            conn.type === 'outbound' ? 'bg-amber-500' : 'bg-[#009193]')}>
+                            {conn.type}
+                          </span>
+                          {conn.status}
+                        </div>
+                      </Tooltip>
+                    </Polyline>
+                  );
+                })}
+
+                {/* Office/Site Markers */}
+                {mapData.markers.map((loc, i) => {
+                  const isOffice = loc.type?.includes('office');
+                  return (
+                    <CircleMarker
+                      key={`marker-${i}`}
+                      center={[loc.coords[1], loc.coords[0]] as any}
+                      radius={isOffice ? 10 : 6}
+                      fillColor={isOffice ? "#18181b" : "#009193"}
+                      color="white"
+                      weight={2}
+                      opacity={1}
+                      fillOpacity={1}
+                    >
+                      <Tooltip direction="top" offset={[0, -5]}>
+                        <div className="p-1">
+                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 leading-none mb-1">{loc.type || 'SITE'}</div>
+                          <div className="text-sm font-bold text-slate-800">{loc.name}</div>
+                          <div className="mt-2 flex items-center gap-2">
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 rounded-full">{loc.value} Units</span>
+                          </div>
+                        </div>
+                      </Tooltip>
+                    </CircleMarker>
+                  );
+                })}
+              </MapContainer>
+            </div>
+            </div>
+          </TabsContent>
+
           {/* INBOUND TAB */}
           <TabsContent value="inbound" className="mt-0 space-y-4">
             <div className="flex items-center justify-between">
