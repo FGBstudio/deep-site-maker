@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@import "leaflet/dist/leaflet.css";
+
+.map-tiles-filter {
+  filter: brightness(1.02) contrast(0.9) saturate(0.8);
+  /* Fix for tile stitching lines */
+  margin: -1px;
+  padding: 1px;
+}
+
 /* ── FGB Design System ──────────────────────────────────────────────────────
    Estratto esteticamente dal Gestionale_v8.html
    Palette teal #009193, sfondo avorio #f5f4f0, DM Sans + Futura uppercase
