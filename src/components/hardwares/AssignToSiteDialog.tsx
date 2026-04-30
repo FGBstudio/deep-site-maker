@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, Sparkles, CheckCircle2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -28,9 +28,11 @@ type Mode = "AIR" | "ENERGY";
 interface Hardware {
   id: string;
   device_id: string;
+  mac_address: string | null;
   hardware_type: string | null;
   product_id: string | null;
   status: string | null;
+  site_id?: string | null;
 }
 
 interface Allocation {
@@ -52,9 +54,9 @@ interface Certification {
 }
 
 interface AssignmentSlot {
-  productId: string; // requested product id
+  productId: string;
   productName: string;
-  selectedTypeFilter: string; // hardware_type or "any"
+  selectedTypeFilter: string;
   hardwareId: string | null;
 }
 
@@ -98,7 +100,10 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
     },
   });
 
-  const { data: allocations = [], refetch: refetchAlloc } = useQuery<Allocation[]>({
+  const selectedCert = certifications.find((c) => c.id === certificationId);
+  const selectedSiteId = selectedCert?.site_id ?? null;
+
+  const { data: allocations = [] } = useQuery<Allocation[]>({
     queryKey: ["project-allocations", certificationId],
     enabled: Boolean(certificationId),
     queryFn: async () => {
@@ -111,47 +116,89 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
     },
   });
 
-  // Filter allocations by mode (AIR vs ENERGY). Legacy rows w/o category are AIR.
+  // Hardware fisicamente già sul sito (fonte di verità per l'assegnazione reale)
+  const { data: onSiteHardwares = [] } = useQuery<Hardware[]>({
+    queryKey: ["hardwares-on-site", selectedSiteId],
+    enabled: Boolean(selectedSiteId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("hardwares")
+        .select("id, device_id, mac_address, hardware_type, product_id, status, site_id")
+        .eq("site_id", selectedSiteId!)
+        .neq("status", "In Stock");
+      if (error) throw error;
+      return (data ?? []) as unknown as Hardware[];
+    },
+  });
+
   const modeAllocations = useMemo(
-    () =>
-      allocations.filter((a) => {
-        const cat = a.category ?? "AIR";
-        return cat === mode;
-      }),
+    () => allocations.filter((a) => (a.category ?? "AIR") === mode),
     [allocations, mode],
   );
 
-  // Build slots from allocations: one slot per requested unit minus already-assigned
-  useEffect(() => {
-    const next: AssignmentSlot[] = [];
+  // Conteggio reale per product_id basato sui device fisicamente sul sito
+  const physicalCountByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const h of onSiteHardwares) {
+      if (!h.product_id) continue;
+      map.set(h.product_id, (map.get(h.product_id) ?? 0) + 1);
+    }
+    return map;
+  }, [onSiteHardwares]);
+
+  // Riepilogo per prodotto: requested / on-site / remaining
+  const productSummary = useMemo(() => {
+    const rows: Array<{
+      productId: string;
+      productName: string;
+      requested: number;
+      onSite: number;
+      remaining: number;
+    }> = [];
     for (const alloc of modeAllocations) {
       const requested = alloc.requested_quantity ?? alloc.quantity ?? 0;
-      const alreadyAssigned = alloc.quantity ?? 0;
-      const remaining = Math.max(requested - alreadyAssigned, 0);
-      const productName = alloc.products?.name ?? "Unknown";
-      for (let i = 0; i < remaining; i++) {
+      const onSite = physicalCountByProduct.get(alloc.product_id) ?? 0;
+      const remaining = Math.max(requested - onSite, 0);
+      rows.push({
+        productId: alloc.product_id,
+        productName: alloc.products?.name ?? "Unknown",
+        requested,
+        onSite,
+        remaining,
+      });
+    }
+    return rows;
+  }, [modeAllocations, physicalCountByProduct]);
+
+  // Slot: uno per pezzo da assegnare ancora
+  useEffect(() => {
+    const next: AssignmentSlot[] = [];
+    for (const r of productSummary) {
+      for (let i = 0; i < r.remaining; i++) {
         next.push({
-          productId: alloc.product_id,
-          productName,
+          productId: r.productId,
+          productName: r.productName,
           selectedTypeFilter: "any",
           hardwareId: null,
         });
       }
     }
     setSlots(next);
-  }, [modeAllocations]);
+  }, [productSummary]);
 
   const filteredCerts = useMemo(
     () => (pmFilter === "all" ? certifications : certifications.filter((c) => c.pm_id === pmFilter)),
     [certifications, pmFilter],
   );
 
-  const selectedCert = certifications.find((c) => c.id === certificationId);
   const selectedPm = pms.find((p) => p.id === selectedCert?.pm_id);
 
-  // Available stock: not yet assigned
+  // Stock disponibile (esclude i device già scelti in altri slot)
   const stock = useMemo(
-    () => hardwares.filter((h) => h.status === "In Stock" && !slots.some((s) => s.hardwareId === h.id)),
+    () =>
+      hardwares.filter(
+        (h) => h.status === "In Stock" && !slots.some((s) => s.hardwareId === h.id),
+      ),
     [hardwares, slots],
   );
   const allTypes = useMemo(
@@ -162,20 +209,15 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
   const updateSlot = (idx: number, patch: Partial<AssignmentSlot>) =>
     setSlots((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
 
+  const totalRequested = productSummary.reduce((s, r) => s + r.requested, 0);
+  const totalOnSite = productSummary.reduce((s, r) => s + r.onSite, 0);
+  const totalRemaining = productSummary.reduce((s, r) => s + r.remaining, 0);
+
   const summarize = (): string => {
     if (modeAllocations.length === 0) return "No requests yet for this project.";
-    const groups = new Map<string, number>();
-    for (const a of modeAllocations) {
-      const name = a.products?.name ?? "Hardware";
-      const requested = a.requested_quantity ?? a.quantity ?? 0;
-      groups.set(name, (groups.get(name) ?? 0) + requested);
-    }
-    const parts = [...groups.entries()].map(([n, q]) => `${q}× ${n}`);
-    if (mode === "AIR") {
-      const who = selectedPm?.full_name ?? "the PM";
-      return `For this project ${who} asked for ${parts.join(", ")}.`;
-    }
-    return `For this project Monitoring Team asked for ${parts.join(", ")}.`;
+    const who = mode === "AIR" ? selectedPm?.full_name ?? "the PM" : "Monitoring Team";
+    const parts = productSummary.map((r) => `${r.requested}× ${r.productName}`);
+    return `${who} requested ${parts.join(", ")}.`;
   };
 
   const handleSubmit = async () => {
@@ -185,15 +227,20 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
     }
     const filledSlots = slots.filter((s) => s.hardwareId);
     if (filledSlots.length === 0) {
-      toast({ title: "Assign at least one device", variant: "destructive" });
+      toast({ title: "Pick at least one device from stock", variant: "destructive" });
       return;
     }
+    if (!selectedSiteId) {
+      toast({ title: "Project has no site linked", variant: "destructive" });
+      return;
+    }
+
     setSaving(true);
     try {
-      // Group hardware ids per allocation product_id and update
+      // 1. Aggiorno gli hardware fisici: site_id + status=Assigned (+ network per i bridge in Energy)
       for (const slot of filledSlots) {
         const update: Record<string, unknown> = {
-          site_id: selectedCert?.site_id ?? null,
+          site_id: selectedSiteId,
           status: "Assigned",
         };
         if (mode === "ENERGY" && bridgeOpen) {
@@ -202,31 +249,52 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
         }
         const { error: hwErr } = await supabase
           .from("hardwares")
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .update(update as any)
+          .update(update)
           .eq("id", slot.hardwareId!);
         if (hwErr) throw hwErr;
       }
 
-      // Bump quantity on each allocation by # of slots filled for that product
-      const byProduct = new Map<string, number>();
-      for (const s of filledSlots) byProduct.set(s.productId, (byProduct.get(s.productId) ?? 0) + 1);
-      for (const [productId, count] of byProduct) {
-        const alloc = modeAllocations.find((a) => a.product_id === productId);
+      // 2. Aggiorno SOLO lo status delle allocation (NON la quantity = quella resta "richiesta").
+      //    Calcolo il nuovo physical count per ciascun product_id e aggiorno status.
+      for (const r of productSummary) {
+        const justAssignedForProduct = filledSlots.filter((s) => s.productId === r.productId).length;
+        const newOnSite = r.onSite + justAssignedForProduct;
+        const alloc = modeAllocations.find((a) => a.product_id === r.productId);
         if (!alloc) continue;
+        let newStatus: string = alloc.status;
+        if (newOnSite >= r.requested && r.requested > 0) newStatus = "Allocated";
+        else if (newOnSite > 0) newStatus = "Partially Allocated";
         await supabase
           .from("project_allocations")
-          .update({ quantity: (alloc.quantity ?? 0) + count, status: "Allocated" })
+          .update({ status: newStatus })
           .eq("id", alloc.id);
       }
 
-      // Refresh site_energy_records counts (Energy only)
+      // 3. Energy: ricalcolo i contatori del site_energy_records dai device REALI sul sito
       if (mode === "ENERGY") {
-        const energyAllocs = allocations.filter((a) => (a.category ?? "AIR") === "ENERGY");
-        const counts = computeEnergyCounts(energyAllocs, filledSlots, hardwares);
+        // Refresh degli hardware sul sito (inclusi quelli appena aggiornati)
+        const { data: refreshed } = await supabase
+          .from("hardwares")
+          .select("id, hardware_type, product_id, status")
+          .eq("site_id", selectedSiteId)
+          .neq("status", "In Stock");
+        const list = (refreshed ?? []) as Array<{ hardware_type: string | null }>;
+        let no_pan10 = 0, no_pan12 = 0, no_pan14 = 0, total_bridges = 0;
+        for (const h of list) {
+          const t = (h.hardware_type ?? "").toUpperCase();
+          if (t.includes("PAN-10") || t.includes("FGB10")) no_pan10++;
+          else if (t.includes("PAN-12") || t.includes("FGB12")) no_pan12++;
+          else if (t.includes("PAN-14") || t.includes("FGB14")) no_pan14++;
+          if (t.includes("BRIDGE")) total_bridges++;
+        }
+        const total_sensors = no_pan10 + no_pan12 + no_pan14;
         const payload: Record<string, unknown> = {
           certification_id: certificationId,
-          ...counts,
+          total_sensors,
+          no_pan10,
+          no_pan12,
+          no_pan14,
+          total_bridges,
           ...(bridgeOpen ? bridgeCfg : {}),
         };
         await supabase
@@ -235,8 +303,12 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
       }
 
       qc.invalidateQueries({ queryKey: ["project-allocations", certificationId] });
+      qc.invalidateQueries({ queryKey: ["hardwares-on-site", selectedSiteId] });
       qc.invalidateQueries({ queryKey: ["site-energy-records"] });
-      toast({ title: "Devices assigned", description: `${filledSlots.length} device(s) allocated.` });
+      toast({
+        title: "Devices assigned",
+        description: `${filledSlots.length} physical device(s) linked to site.`,
+      });
       onSaved();
       onOpenChange(false);
     } catch (err) {
@@ -307,61 +379,136 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
             </div>
           )}
 
-          {certificationId && slots.length === 0 && (
+          {/* Riepilogo per prodotto: Requested / On site / To assign */}
+          {certificationId && productSummary.length > 0 && (
+            <div className="rounded-md border border-border overflow-hidden">
+              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-2 bg-muted/40 text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
+                <span>Product</span>
+                <span className="text-right">Requested</span>
+                <span className="text-right">On site</span>
+                <span className="text-right">To assign</span>
+              </div>
+              {productSummary.map((r) => (
+                <div
+                  key={r.productId}
+                  className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-2 text-xs border-t border-border items-center"
+                >
+                  <span className="font-medium">{r.productName}</span>
+                  <span className="text-right tabular-nums">{r.requested}</span>
+                  <span className="text-right tabular-nums">
+                    <Badge variant={r.onSite > 0 ? "default" : "outline"} className="text-[10px]">
+                      {r.onSite}
+                    </Badge>
+                  </span>
+                  <span className="text-right tabular-nums">
+                    <Badge
+                      variant={r.remaining > 0 ? "destructive" : "outline"}
+                      className="text-[10px]"
+                    >
+                      {r.remaining}
+                    </Badge>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Stato globale */}
+          {certificationId && totalRequested > 0 && totalRemaining === 0 && (
+            <div className="rounded-md border border-green-500/20 bg-green-500/5 p-3 flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <p className="text-xs text-foreground">
+                All {totalRequested} requested {mode.toLowerCase()} devices are physically on site.
+              </p>
+            </div>
+          )}
+
+          {certificationId && totalOnSite > 0 && totalRemaining > 0 && (
             <p className="text-xs text-muted-foreground italic">
-              All requested {mode.toLowerCase()} devices are already assigned, or none were requested.
+              {totalOnSite} of {totalRequested} already installed. {totalRemaining} left to assign.
             </p>
           )}
 
-          {slots.map((slot, idx) => {
-            const candidates = stock.filter(
-              (h) =>
-                slot.selectedTypeFilter === "any" || h.hardware_type === slot.selectedTypeFilter,
-            );
-            return (
-              <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
-                <div className="grid gap-1">
-                  <Label className="text-[11px] text-muted-foreground">
-                    Slot {idx + 1} · requested: <Badge variant="outline" className="ml-1">{slot.productName}</Badge>
-                  </Label>
-                  <Select
-                    value={slot.selectedTypeFilter}
-                    onValueChange={(v) => updateSlot(idx, { selectedTypeFilter: v, hardwareId: null })}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any type</SelectItem>
-                      {allTypes.map((t) => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Select
-                  value={slot.hardwareId ?? ""}
-                  onValueChange={(v) => updateSlot(idx, { hardwareId: v })}
-                >
-                  <SelectTrigger><SelectValue placeholder="Pick available device" /></SelectTrigger>
-                  <SelectContent>
-                    {candidates.map((h) => (
-                      <SelectItem key={h.id} value={h.id}>
-                        {h.device_id} {h.hardware_type ? `(${h.hardware_type})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => updateSlot(idx, { hardwareId: null, selectedTypeFilter: "any" })}
-                >
-                  Clear
-                </Button>
+          {/* Devices già fisicamente sul sito (read-only) */}
+          {onSiteHardwares.length > 0 && (
+            <details className="rounded-md border border-border">
+              <summary className="cursor-pointer px-3 py-2 text-xs font-medium select-none">
+                Devices already on site ({onSiteHardwares.length})
+              </summary>
+              <div className="divide-y divide-border">
+                {onSiteHardwares.map((h) => (
+                  <div key={h.id} className="px-3 py-2 text-[11px] grid grid-cols-3 gap-2">
+                    <span className="font-mono">{h.device_id}</span>
+                    <span className="font-mono text-muted-foreground">{h.mac_address ?? "—"}</span>
+                    <span className="text-muted-foreground">{h.hardware_type ?? ""}</span>
+                  </div>
+                ))}
               </div>
-            );
-          })}
+            </details>
+          )}
 
-          {mode === "ENERGY" && (
+          {/* Slot da assegnare */}
+          {slots.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">
+                Pick physical devices from stock
+              </p>
+              {slots.map((slot, idx) => {
+                const candidates = stock.filter(
+                  (h) =>
+                    slot.selectedTypeFilter === "any" || h.hardware_type === slot.selectedTypeFilter,
+                );
+                return (
+                  <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                    <div className="grid gap-1">
+                      <Label className="text-[11px] text-muted-foreground">
+                        Slot {idx + 1} · for: <Badge variant="outline" className="ml-1">{slot.productName}</Badge>
+                      </Label>
+                      <Select
+                        value={slot.selectedTypeFilter}
+                        onValueChange={(v) => updateSlot(idx, { selectedTypeFilter: v, hardwareId: null })}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="any">Any type</SelectItem>
+                          {allTypes.map((t) => (
+                            <SelectItem key={t} value={t}>{t}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Select
+                      value={slot.hardwareId ?? ""}
+                      onValueChange={(v) => updateSlot(idx, { hardwareId: v })}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Pick device (serial · MAC)" /></SelectTrigger>
+                      <SelectContent>
+                        {candidates.length === 0 && (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">No stock available</div>
+                        )}
+                        {candidates.map((h) => (
+                          <SelectItem key={h.id} value={h.id}>
+                            {h.device_id}
+                            {h.mac_address ? ` · ${h.mac_address}` : ""}
+                            {h.hardware_type ? ` (${h.hardware_type})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => updateSlot(idx, { hardwareId: null, selectedTypeFilter: "any" })}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {mode === "ENERGY" && slots.length > 0 && (
             <div className="rounded-md border border-border">
               <button
                 type="button"
@@ -398,34 +545,15 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
           )}
         </div>
 
-        <Button onClick={handleSubmit} disabled={saving} className="w-full">
+        <Button
+          onClick={handleSubmit}
+          disabled={saving || slots.length === 0 || !slots.some((s) => s.hardwareId)}
+          className="w-full"
+        >
           {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          Confirm Allocation
+          Assign Devices to Site
         </Button>
       </DialogContent>
     </Dialog>
   );
-}
-
-function computeEnergyCounts(
-  allocs: Allocation[],
-  newlyFilled: AssignmentSlot[],
-  hardwares: Hardware[],
-) {
-  // Aggregate previously-assigned + newly-assigned hardwares for this cert
-  const newHwIds = new Set(newlyFilled.map((s) => s.hardwareId).filter(Boolean) as string[]);
-  const total_sensors = allocs.reduce((s, a) => s + (a.quantity ?? 0), 0) + newHwIds.size;
-  let no_pan10 = 0;
-  let no_pan12 = 0;
-  let no_pan14 = 0;
-  let total_bridges = 0;
-  for (const id of newHwIds) {
-    const hw = hardwares.find((h) => h.id === id);
-    const t = (hw?.hardware_type ?? "").toUpperCase();
-    if (t.includes("PAN-10") || t.includes("FGB10")) no_pan10++;
-    else if (t.includes("PAN-12") || t.includes("FGB12")) no_pan12++;
-    else if (t.includes("PAN-14") || t.includes("FGB14")) no_pan14++;
-    if (t.includes("BRIDGE")) total_bridges++;
-  }
-  return { total_sensors, no_pan10, no_pan12, no_pan14, total_bridges };
 }
