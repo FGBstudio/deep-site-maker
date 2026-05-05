@@ -34,6 +34,7 @@ interface Hardware {
   status: string | null;
   site_id?: string | null;
   country?: string | null;
+  category?: string | null;
 }
 
 interface Allocation {
@@ -55,6 +56,7 @@ interface Certification {
 }
 
 interface AssignmentSlot {
+  requestedProductId: string;
   productId: string;
   productName: string;
   hardwareId: string | null;
@@ -135,7 +137,7 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
     queryFn: async () => {
       const { data, error } = await supabase
         .from("hardwares")
-        .select("id, device_id, mac_address, hardware_type, product_id, status, site_id")
+        .select("id, device_id, mac_address, hardware_type, product_id, status, site_id, category")
         .eq("site_id", selectedSiteId!)
         .neq("status", "In Stock");
       if (error) throw error;
@@ -143,9 +145,36 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
     },
   });
 
+  // Fetch all products for overrides
+  const { data: allProducts = [] } = useQuery({
+    queryKey: ["all-products-for-assign"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name, sku, category")
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const modeProducts = useMemo(
+    () => allProducts.filter(p => {
+      const name = p.name?.toUpperCase() || "";
+      const isAirProduct = name.includes("CLAIR") || name.includes("WELL") || name.includes("LEED") || name.includes("CO2");
+      const productCategory = isAirProduct ? "AIR" : (p.category?.toUpperCase() || "AIR");
+      return productCategory === mode;
+    }),
+    [allProducts, mode]
+  );
+
   const modeAllocations = useMemo(
     () => allocations.filter((a) => {
-      const productCategory = a.products?.category?.toUpperCase() || "AIR";
+      // Hard override: If the product name indicates it's an Air monitor, force it to AIR mode.
+      const name = a.products?.name?.toUpperCase() || "";
+      const isAirProduct = name.includes("CLAIR") || name.includes("WELL") || name.includes("LEED") || name.includes("CO2");
+      
+      const productCategory = isAirProduct ? "AIR" : (a.category?.toUpperCase() || a.products?.category?.toUpperCase() || "AIR");
       return productCategory === mode;
     }),
     [allocations, mode],
@@ -193,10 +222,6 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
   useEffect(() => {
     setSlots(prev => {
       // If we already have slots and the project hasn't changed, don't reset them
-      // This prevents wiping out selections when productSummary recalculates
-      const currentHash = productSummary.map(r => `${r.productId}:${r.requested}`).join('|');
-      const prevHash = prev.map(s => s.productId).join('|'); // Simplified check
-      
       if (prev.length > 0 && prev.length === totalRemaining) {
         return prev;
       }
@@ -205,6 +230,7 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
       for (const r of productSummary) {
         for (let i = 0; i < r.remaining; i++) {
           next.push({
+            requestedProductId: r.productId,
             productId: r.productId,
             productName: r.productName,
             hardwareId: null,
@@ -225,10 +251,6 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
   // Stock disponibile (fonte grezza filtrata solo per status)
   const allStock = useMemo(
     () => hardwares.filter((h) => h.status === "In Stock"),
-    [hardwares],
-  );
-  const allTypes = useMemo(
-    () => Array.from(new Set(hardwares.map((h) => h.hardware_type).filter(Boolean) as string[])),
     [hardwares],
   );
 
@@ -259,11 +281,12 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
 
     setSaving(true);
     try {
-      // 1. Aggiorno gli hardware fisici: site_id + status=Assigned (+ network per i bridge in Energy)
+      // 1. Aggiorno gli hardware fisici: site_id + status=Assigned + product_id (in case of override)
       for (const slot of filledSlots) {
         const update: Record<string, unknown> = {
           site_id: selectedSiteId,
           status: "Assigned",
+          product_id: slot.productId, // Ensure the hardware record reflects the selected product type
         };
         if (mode === "ENERGY" && bridgeOpen) {
           const isBridge = /bridge/i.test(slot.productName);
@@ -277,11 +300,10 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
         if (hwErr) throw hwErr;
       }
 
-      // 2. Aggiorno SOLO lo status delle allocation (NON la quantity = quella resta "richiesta").
-      //    Calcolo il nuovo physical count per ciascun product_id e aggiorno status.
+      // 2. Aggiorno SOLO lo status delle allocation (basato sulla richiesta originale).
       for (const r of productSummary) {
-        const justAssignedForProduct = filledSlots.filter((s) => s.productId === r.productId).length;
-        const newOnSite = r.onSite + justAssignedForProduct;
+        const justAssignedForThisRequest = filledSlots.filter((s) => s.requestedProductId === r.productId).length;
+        const newOnSite = r.onSite + justAssignedForThisRequest;
         const alloc = modeAllocations.find((a) => a.product_id === r.productId);
         if (!alloc) continue;
         let newStatus: string = alloc.status;
@@ -295,7 +317,6 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
 
       // 3. Energy: ricalcolo i contatori del site_energy_records dai device REALI sul sito
       if (mode === "ENERGY") {
-        // Refresh degli hardware sul sito (inclusi quelli appena aggiornati)
         const { data: refreshed } = await supabase
           .from("hardwares")
           .select("id, hardware_type, product_id, status")
@@ -509,42 +530,88 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
               </p>
               {slots.map((slot, idx) => {
                 const candidates = allStock.filter(
-                  (h) => h.product_id === slot.productId && 
-                         (stockCountry === "all" || h.country === stockCountry) &&
-                         (h.id === slot.hardwareId || !slots.some(s => s.hardwareId === h.id))
+                  (h) => {
+                    const matchesProduct = h.product_id === slot.productId;
+                    const matchesCategory = (h.category?.toUpperCase() || "AIR") === mode;
+                    const matchesCountry = stockCountry === "all" || h.country === stockCountry;
+                    const notTaken = h.id === slot.hardwareId || !slots.some(s => s.hardwareId === h.id);
+                    
+                    return matchesProduct && matchesCategory && matchesCountry && notTaken;
+                  }
                 );
                 return (
-                  <div key={idx} className="grid grid-cols-[1fr_auto] gap-2 items-end">
-                    <div className="grid gap-1">
-                      <Label className="text-[11px] text-muted-foreground">
-                        Slot {idx + 1} · for: <Badge variant="outline" className="ml-1">{slot.productName}</Badge>
-                      </Label>
-                      <Select
-                        value={slot.hardwareId ?? ""}
-                        onValueChange={(v) => updateSlot(idx, { hardwareId: v })}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Pick physical device (serial · MAC)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {candidates.length === 0 && (
-                            <div className="px-2 py-1.5 text-xs text-muted-foreground">No matching {slot.productName} in stock</div>
-                          )}
-                          {candidates.map((h) => (
-                            <SelectItem key={h.id} value={h.id}>
-                              <div className="flex flex-col">
-                                <span className="font-mono font-bold text-[#009193]">{h.device_id}</span>
-                                {h.mac_address && <span className="text-[10px] text-muted-foreground opacity-70">MAC: {h.mac_address}</span>}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <div key={idx} className="grid grid-cols-[1fr_auto] gap-2 items-end border-b border-slate-100 pb-3 last:border-0">
+                    <div className="grid gap-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[11px] font-bold text-slate-500">
+                          Slot {idx + 1}
+                        </Label>
+                        {slot.productId !== slot.requestedProductId && (
+                          <Badge variant="outline" className="text-[9px] border-amber-200 text-amber-600 bg-amber-50">
+                            Override: PM asked for {modeAllocations.find(a => a.product_id === slot.requestedProductId)?.products?.name || "Original"}
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Select
+                            value={slot.productId}
+                            onValueChange={(v) => {
+                              const p = modeProducts.find(mp => mp.id === v);
+                              updateSlot(idx, { 
+                                productId: v, 
+                                productName: p?.name || slot.productName,
+                                hardwareId: null
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-9 text-xs font-semibold bg-slate-50 border-slate-200">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {modeProducts.map(p => (
+                                <SelectItem key={p.id} value={p.id} className="text-xs">
+                                  {p.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-[2]">
+                          <Select
+                            value={slot.hardwareId ?? ""}
+                            onValueChange={(v) => updateSlot(idx, { hardwareId: v })}
+                          >
+                            <SelectTrigger className="h-9 border-slate-200">
+                              <SelectValue placeholder="Pick physical device (serial · MAC)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {candidates.length === 0 && (
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground">No matching {slot.productName} in stock</div>
+                              )}
+                              {candidates.map((h) => (
+                                <SelectItem key={h.id} value={h.id}>
+                                  <div className="flex flex-col">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono font-bold text-[#009193]">{h.device_id}</span>
+                                      <Badge variant="outline" className="text-[9px] opacity-70 py-0 px-1 border-slate-200">
+                                        {h.hardware_type || "No Model"}
+                                      </Badge>
+                                    </div>
+                                    {h.mac_address && <span className="text-[10px] text-muted-foreground opacity-70">MAC: {h.mac_address}</span>}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-9"
+                      className="h-9 mb-[2px] text-slate-400 hover:text-destructive"
                       onClick={() => updateSlot(idx, { hardwareId: null })}
                     >
                       Clear
