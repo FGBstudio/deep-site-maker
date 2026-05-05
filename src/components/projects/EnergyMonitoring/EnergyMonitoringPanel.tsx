@@ -45,22 +45,33 @@ export function EnergyMonitoringPanel({ certificationId, isAdmin }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [acceptedAt, setAcceptedAt] = useState<string | null>(null);
 
-  // Detect prior quote acceptance via existing site_energy_records row.
+  // Detect prior quote acceptance and hydrate snapshot (PM read-only path).
   useEffect(() => {
-    if (!isAdmin) return;
     let active = true;
     (async () => {
       const { data } = await supabase
         .from("site_energy_records" as never)
-        .select("created_at")
+        .select("created_at, ct_builder_snapshot")
         .eq("certification_id", certificationId)
         .maybeSingle();
-      if (active && data) setAcceptedAt((data as { created_at: string }).created_at);
+      if (!active || !data) return;
+      const row = data as { created_at: string; ct_builder_snapshot: { rawRows?: unknown[]; settings?: unknown; fileName?: string } | null };
+      setAcceptedAt(row.created_at);
+      if (!rawRows && row.ct_builder_snapshot?.rawRows) {
+        if (row.ct_builder_snapshot.settings) {
+          setSettings(certificationId, row.ct_builder_snapshot.settings as never);
+        }
+        setData(
+          certificationId,
+          row.ct_builder_snapshot.rawRows as never,
+          row.ct_builder_snapshot.fileName ?? "snapshot.csv",
+        );
+      }
     })();
     return () => {
       active = false;
     };
-  }, [certificationId, isAdmin]);
+  }, [certificationId, rawRows, setData, setSettings]);
 
   const handleConfirmQuote = async () => {
     if (!result || !user) return;
