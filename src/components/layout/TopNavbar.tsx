@@ -62,18 +62,27 @@ export function TopNavbar() {
     role === "cxa";
 
   let navItems: NavItem[] = [];
+  const inProjects = isInProjectsSection(location.pathname);
+  const standaloneSection = getSectionForPath(location.pathname);
+  const isMonitorContext = standaloneSection?.id === "monitor" || location.pathname.startsWith("/hardwares") || location.pathname.startsWith("/supplier-orders");
 
   if (isAdmin) {
-    navItems = [
-      { title: "Admin Dashboard", url: "/ceo-dashboard", icon: Crown },
-      { title: "Projects", url: "/projects", icon: FolderKanban },
-      { title: "Contacts", url: "/contacts", icon: ContactIcon },
-      { title: "Tasks & Alerts", url: "/admin-tasks", icon: Inbox },
-      { title: "Hardwares", url: "/hardwares", icon: Package },
-      { title: "Orders", url: "/supplier-orders", icon: Truck },
-      { title: "Reports", url: "/reports", icon: BarChart3 },
-      { title: "Settings", url: "/settings", icon: Settings },
-    ];
+    if (isMonitorContext) {
+      navItems = [
+        { title: "Monitor Hub", url: "/monitor", icon: BarChart3 },
+        { title: "Hardwares", url: "/hardwares", icon: Package },
+        { title: "Orders", url: "/supplier-orders", icon: Truck },
+      ];
+    } else {
+      navItems = [
+        { title: "Admin Dashboard", url: "/ceo-dashboard", icon: Crown },
+        { title: "Projects", url: "/projects", icon: FolderKanban },
+        { title: "Contacts", url: "/contacts", icon: ContactIcon },
+        { title: "Tasks & Alerts", url: "/admin-tasks", icon: Inbox },
+        { title: "Reports", url: "/reports", icon: BarChart3 },
+        { title: "Settings", url: "/settings", icon: Settings },
+      ];
+    }
   } else if (isPM) {
     navItems = [
       { title: "Dashboard", url: "/pm-portal", icon: LayoutDashboard },
@@ -91,11 +100,6 @@ export function TopNavbar() {
     if (path === "/") return location.pathname === "/";
     return location.pathname.startsWith(path);
   };
-
-  // Section context: are we inside the "Projects" macro-section, or one of the
-  // standalone hub sections (Office, HR, Monitor, Invoice)?
-  const inProjects = isInProjectsSection(location.pathname);
-  const standaloneSection = getSectionForPath(location.pathname);
 
   // Current page label for breadcrumb (only meaningful inside Projects)
   const currentPage = navItems.find((item) => isActive(item.url));
@@ -189,8 +193,8 @@ export function TopNavbar() {
         {/* ── Spacer ── */}
         <div className="flex-1" />
 
-        {/* ── Functional tabs: only inside the Projects macro-section ── */}
-        {inProjects && (
+        {/* ── Functional tabs: inside Projects OR Monitor context ── */}
+        {(inProjects || isMonitorContext) && (
           <div className="hidden lg:flex items-center gap-[2px] mr-4">
             {navItems.map((item) => (
               <NavLink
