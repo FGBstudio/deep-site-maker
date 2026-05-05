@@ -25,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Table as TableIcon, LayoutGrid, Upload, Search, Package } from "lucide-react";
+import { Plus, Table as TableIcon, LayoutGrid, Upload, Search, Package, Link2Off, Loader2 } from "lucide-react";
 import { AssignToSiteDialog } from "@/components/hardwares/AssignToSiteDialog";
 import {
   Table,
@@ -98,6 +98,36 @@ export default function Hardwares() {
   // Summary Metrics
   const totalUnits = hardwares.length;
   
+  const handleUnassign = async (id: string) => {
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from("hardwares")
+        .update({ 
+          site_id: null, 
+          status: "In Stock" 
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+      
+      toast({ 
+        title: "Hardware Unassigned", 
+        description: "Unit has been returned to global stock successfully." 
+      });
+      
+      setDetailedHardware(null);
+      fetchData();
+    } catch (err: any) {
+      toast({ 
+        title: "Unassignment Failed", 
+        description: err.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
   // AIR Metrics
   const airTotal = hardwares.filter(h => h.category === 'AIR').length;
   const airStock = hardwares.filter(h => h.category === 'AIR' && h.status === 'In Stock').length;
@@ -623,6 +653,24 @@ export default function Hardwares() {
                 </div>
               </div>
             </div>
+
+            {detailedHardware?.status === 'Assigned' && (
+              <div className="pt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="w-full gap-2 text-xs font-bold border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300 transition-all shadow-sm"
+                  onClick={() => handleUnassign(detailedHardware.id)}
+                  disabled={loading}
+                >
+                  {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2Off className="h-3.5 w-3.5" />}
+                  Unassign from Site & Return to Stock
+                </Button>
+                <p className="text-[9px] text-muted-foreground mt-2 text-center italic">
+                  This will clear the site link and set status back to 'In Stock'.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="pt-4 border-t border-[#009193]/10">
