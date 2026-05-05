@@ -21,6 +21,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search } from "lucide-react";
 import { FGBPlanner } from "@/components/dashboard/FGBPlanner";
 
 type PMProjectView = PMProject & {
@@ -189,10 +192,39 @@ export function PMProjectsBoard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const financialFilter = searchParams.get("filter") === "financial";
 
-  const visibleProjects = useMemo(() => {
+  const [search, setSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("all");
+  const [regionFilter, setRegionFilter] = useState("all");
+  const [cityFilter, setCityFilter] = useState("all");
+
+  const baseProjects = useMemo(() => {
     if (!financialFilter || !financialAlerts) return projects as PMProjectView[];
     return (projects as PMProjectView[]).filter((p) => financialAlerts.byProject.has(p.id));
   }, [projects, financialFilter, financialAlerts]);
+
+  const clientOptions = useMemo(
+    () => Array.from(new Set(baseProjects.map((p) => p.client).filter(Boolean))).sort(),
+    [baseProjects]
+  );
+  const regionOptions = useMemo(
+    () => Array.from(new Set(baseProjects.map((p) => p.region).filter(Boolean))).sort(),
+    [baseProjects]
+  );
+  const cityOptions = useMemo(
+    () => Array.from(new Set(baseProjects.map((p) => p.sites?.city).filter((c): c is string => !!c))).sort(),
+    [baseProjects]
+  );
+
+  const visibleProjects = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return baseProjects.filter((p) => {
+      if (clientFilter !== "all" && p.client !== clientFilter) return false;
+      if (regionFilter !== "all" && p.region !== regionFilter) return false;
+      if (cityFilter !== "all" && p.sites?.city !== cityFilter) return false;
+      if (term && !p.name.toLowerCase().includes(term)) return false;
+      return true;
+    });
+  }, [baseProjects, clientFilter, regionFilter, cityFilter, search]);
 
   const groupedProjects = useMemo(
     () => ({
@@ -256,6 +288,38 @@ export function PMProjectsBoard() {
         </div>
 
         <TabsContent value="kanban" className="m-0 focus-visible:outline-none">
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search project name..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="Client" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Clients</SelectItem>
+                {clientOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={regionFilter} onValueChange={setRegionFilter}>
+              <SelectTrigger className="w-40"><SelectValue placeholder="Region" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Regions</SelectItem>
+                {regionOptions.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={cityFilter} onValueChange={setCityFilter}>
+              <SelectTrigger className="w-40"><SelectValue placeholder="City" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Cities</SelectItem>
+                {cityOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <Tabs defaultValue="da_configurare" className="space-y-6">
             <TabsList className="grid w-full grid-cols-3">
               {Object.entries(STATUS_META).map(([key, meta]) => {
