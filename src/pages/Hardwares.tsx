@@ -66,6 +66,8 @@ export default function Hardwares() {
 
   const [detailedHardware, setDetailedHardware] = useState<any | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
 
   const fetchData = async () => {
     setLoading(true);
@@ -92,7 +94,10 @@ export default function Hardwares() {
       (products.find((p: any) => p.id === h.product_id)?.name.toLowerCase().includes(searchQuery.toLowerCase()));
     
     const matchesCategory = !selectedCategory || h.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const matchesStatus = statusFilter === "all" || h.status === statusFilter;
+    const matchesLocation = locationFilter === "all" || h.country === locationFilter;
+
+    return matchesSearch && matchesCategory && matchesStatus && matchesLocation;
   });
 
   // Summary Metrics
@@ -482,10 +487,39 @@ export default function Hardwares() {
       <div className="premium-card glass p-6">
         <Tabs value={selectedCategory || "ALL"} onValueChange={(val) => setSelectedCategory(val === "ALL" ? null : val)} className="w-full">
           <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <TableIcon className="h-5 w-5 text-[#009193]" />
-              <h3 className="font-bold tracking-tight">{selectedCategory ? `${selectedCategory} Registry` : 'Global Hardware Registry'}</h3>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <TableIcon className="h-5 w-5 text-[#009193]" />
+                <h3 className="font-bold tracking-tight">{selectedCategory ? `${selectedCategory} Registry` : 'Global Hardware Registry'}</h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-32 bg-slate-50 border-slate-200 text-[10px] font-bold uppercase h-8">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    {[...new Set(hardwares.map(h => h.status).filter(Boolean))].sort().map(status => (
+                      <SelectItem key={status} value={status}>{status}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                  <SelectTrigger className="w-36 bg-slate-50 border-slate-200 text-[10px] font-bold uppercase h-8">
+                    <SelectValue placeholder="Location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {[...new Set(hardwares.map(h => h.country).filter(Boolean))].sort().map(loc => (
+                      <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+
             <TabsList className="bg-[#009193]/5 border border-[#009193]/10">
               <TabsTrigger value="ALL" className="text-[11px] font-bold uppercase tracking-tight px-6 data-[state=active]:bg-[#009193] data-[state=active]:text-white">All Assets</TabsTrigger>
               <TabsTrigger value="AIR" className="text-[11px] font-bold uppercase tracking-tight px-6 data-[state=active]:bg-[#009193] data-[state=active]:text-white">AIR Portfolio</TabsTrigger>
