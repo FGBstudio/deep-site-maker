@@ -38,7 +38,12 @@ export function determineCTModel(amps: number, wireSqmm: number): CTModel {
   return rank[ctWire] > rank[ctAmp] ? ctWire : ctAmp;
 }
 
-export function processRows(rows: RawRow[], settings: CTSettings): CTResult {
+export function processRows(
+  rows: RawRow[],
+  settings: CTSettings,
+  priceOverrides?: Partial<Record<string, number>>,
+): CTResult {
+  const PRICES: Record<string, number> = { ...DEFAULT_PRICES, ...(priceOverrides ?? {}) };
   const profileMap = new Map<string, { kc: number; hoursY: number }>();
   for (const lp of settings.loadProfiles) {
     profileMap.set(lp.use, { kc: lp.kcPct / 100, hoursY: lp.hours * lp.days });
