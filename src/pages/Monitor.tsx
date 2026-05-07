@@ -217,42 +217,15 @@ function EnergyTable() {
                   {filtered.map((r) => {
                     const isOpen = expanded.has(r.id);
                     return (
-                      <>
-                        <tr
-                          key={r.id}
-                          className={cn("border-t border-border cursor-pointer hover:bg-muted/30", isOpen && "bg-primary/5")}
-                          onClick={() => toggleExpand(r.id)}
-                        >
-                          <td className="p-2">
-                            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </td>
-                          <td className="p-2 font-medium">{r.project_name ?? "—"}</td>
-                          <td className="p-2 text-muted-foreground">{r.brand_name ?? "—"}</td>
-                          <td className="p-2">{r.country ?? "—"}</td>
-                          <td className="p-2">{r.city ?? "—"}</td>
-                          <td className="p-2"><Badge variant="outline">{r.status ?? "—"}</Badge></td>
-                          <td className="p-2 text-right tabular-nums">{fmtNum(r.total_sensors)}</td>
-                          <td className="p-2 text-right tabular-nums">{fmtNum(r.total_bridges)}</td>
-                          <td className="p-2 text-right tabular-nums">{fmtNum(r.no_mango)}</td>
-                          {isAdmin && <td className="p-2 text-right tabular-nums">{fmtEUR(r.total_cost)}</td>}
-                          {isAdmin && <td className="p-2 text-right tabular-nums">{fmtPct(r.roi_pct)}</td>}
-                        </tr>
-                        {isOpen && (
-                          <tr className="border-t border-border bg-muted/20">
-                            <td colSpan={colSpan} className="p-4">
-                              <RecordDetails
-                                record={r}
-                                isAdmin={isAdmin}
-                                onSaved={() => {
-                                  qc.invalidateQueries({ queryKey: ["site-energy-records"] });
-                                  toast({ title: "Updated" });
-                                }}
-                                onError={(msg) => toast({ title: "Save failed", description: msg, variant: "destructive" })}
-                              />
-                            </td>
-                          </tr>
-                        )}
-                      </>
+                      <RowFragment key={r.id}
+                        record={r}
+                        isOpen={isOpen}
+                        isAdmin={isAdmin}
+                        colSpan={colSpan}
+                        onToggle={() => toggleExpand(r.id)}
+                        onSaved={() => { qc.invalidateQueries({ queryKey: ["site-energy-records"] }); toast({ title: "Updated" }); }}
+                        onError={(msg) => toast({ title: "Save failed", description: msg, variant: "destructive" })}
+                      />
                     );
                   })}
                 </tbody>
