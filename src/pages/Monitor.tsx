@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Search, Download, Eye, EyeOff, Pencil } from "lucide-react";
+import { Check, Download, Eye, EyeOff, Loader2, Pencil, Search } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -106,11 +106,12 @@ function EnergyTable() {
     });
   }, [rows, search, filters]);
 
-  const update = async (id: string, patch: SiteEnergyRecordPatch) => {
+  const update = async (id: string, patch: SiteEnergyRecordPatch): Promise<boolean> => {
     const { error } = await supabase.from("site_energy_records" as never).update(patch as never).eq("id", id);
-    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return false; }
     toast({ title: "Saved", description: "Row updated." });
-    qc.invalidateQueries({ queryKey: ["monitor-energy-rows"] });
+    await qc.invalidateQueries({ queryKey: ["monitor-energy-rows"] });
+    return true;
   };
 
   const exportCSV = () => {
@@ -284,7 +285,7 @@ interface RowProps {
   idx: number;
   isAdmin: boolean;
   showNetwork: boolean;
-  onUpdate: (id: string, patch: SiteEnergyRecordPatch) => void;
+  onUpdate: (id: string, patch: SiteEnergyRecordPatch) => Promise<boolean>;
 }
 
 function Row({ r, idx, isAdmin, showNetwork, onUpdate }: RowProps) {
@@ -386,7 +387,7 @@ function NumCell({ n, fmt = fmtNum, bold, tone }: { n: number | null | undefined
 
 interface EditCellProps {
   value: string | null | undefined;
-  onSave: (v: string) => void;
+  onSave: (v: string) => Promise<boolean> | boolean | void;
   type?: "text" | "number" | "date";
   options?: readonly string[];
   right?: boolean;
@@ -397,12 +398,35 @@ interface EditCellProps {
 function EditCell({ value, onSave, type = "text", options, right, mono, render }: EditCellProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(value ?? "");
+  }, [editing, value]);
+
+  const commit = async (next: string) => {
+    if (next === (value ?? "")) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const ok = await onSave(next);
+      if (ok === false) return;
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 900);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (editing && options) {
     return (
       <td className="px-2 py-1 border-b border-border">
-        <Select value={draft} onValueChange={(v) => { setDraft(v); onSave(v); setEditing(false); }}>
-          <SelectTrigger className="h-7 text-xs w-full"><SelectValue /></SelectTrigger>
+        <Select value={draft} disabled={saving} onValueChange={(v) => { setDraft(v); void commit(v); }}>
+          <SelectTrigger className="h-7 text-xs w-full ring-1 ring-primary/40"><SelectValue /></SelectTrigger>
           <SelectContent>
             {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
           </SelectContent>
@@ -414,14 +438,14 @@ function EditCell({ value, onSave, type = "text", options, right, mono, render }
     return (
       <td className={cn("px-2 py-1 border-b border-border", right && "text-right")}>
         <Input
-          type={type} value={draft} autoFocus
+          type={type} value={draft} autoFocus disabled={saving}
           onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => { if (draft !== (value ?? "")) onSave(draft); setEditing(false); }}
+          onBlur={() => { void commit(draft); }}
           onKeyDown={(e) => {
             if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
             if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
           }}
-          className="h-7 text-xs"
+          className="h-7 text-xs ring-1 ring-primary/40"
         />
       </td>
     );
@@ -429,13 +453,16 @@ function EditCell({ value, onSave, type = "text", options, right, mono, render }
   return (
     <td
       className={cn(
-        "px-3 py-2 cursor-text whitespace-nowrap border-b border-border hover:bg-primary/10 hover:ring-1 hover:ring-inset hover:ring-primary/30 transition-colors",
+        "relative px-3 py-2 cursor-text whitespace-nowrap border-b border-border hover:bg-primary/10 hover:ring-1 hover:ring-inset hover:ring-primary/30 transition-colors",
+        saved && "bg-primary/10 ring-1 ring-inset ring-primary/30",
         right && "text-right tabular-nums",
         mono && "font-mono text-[10.5px]",
       )}
       onClick={() => { setDraft(value ?? ""); setEditing(true); }}
       title="Click to edit"
     >
+      {saving && <Loader2 className="absolute right-1 top-1 h-3 w-3 animate-spin text-primary" />}
+      {saved && <Check className="absolute right-1 top-1 h-3 w-3 text-primary" />}
       {render ? render(value) : (value ?? <span className="text-muted-foreground/60">—</span>)}
     </td>
   );
