@@ -272,8 +272,8 @@ function Th({ children, right, sticky, tone }: { children: React.ReactNode; righ
     <th className={cn(
       "px-3 py-2 font-semibold text-[10.5px] uppercase tracking-wide whitespace-nowrap border-b border-border",
       right ? "text-right" : "text-left",
-      sticky && "sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]",
-      tone,
+      // Sticky cells MUST have an opaque background so non-sticky columns don't show through during horizontal scroll.
+      sticky ? "sticky left-0 z-30 bg-card shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]" : tone,
     )}>
       {children}
     </th>
