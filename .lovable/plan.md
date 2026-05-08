@@ -1,108 +1,32 @@
-# Monitor Energy Table — Full Spec Implementation
+## Issues from screenshot
 
-## Goal
-Render `src/pages/Monitor.tsx` as the canonical Energy operations table per the spec. Hide internal columns, expose all editable fields, compute totals from live joins (`products`, `hardwares`, `ops_purchase_orders`, `ops_shipments`), and persist edits to `site_energy_records`.
+1. **No visible edit icon on rows** — currently cells are editable but the only hint is hover ring + helper text "Click any cell to edit". Users don't perceive the row as editable.
+2. **"Upcoming" status badge overlaps the city line** in the Project column — the sticky Project cell shows `Project name` + `City, Country` underneath, and the Status cell next to it renders the badge that visually drifts over the city text (the status column is too narrow, status is in its own column but the absolutely-positioned save indicators + low z-index of the Project cell let the badge bleed).
 
-## Column layout (in order)
+## Plan
 
-Always-visible (filterable where noted):
-1. **Project Name** — `project_name` (filter)
-2. **Status** — enum badge: Upcoming · Deleted · Installed · Postponed · Completed · On-hold (filter, editable)
-3. **Frequency** — 50 / 60 badge (filter, editable)
-4. **Free Software year** — number, default 3 (filter, editable)
-5. **Installation Date** — date (editable)
-6. **Contracted** — yes by default once quote accepted (editable)
-7. **PM** — join `profiles.display_name` via `pm_id` (filter, read-only)
-8. **Handover date** — `handover_date` formatted "12 May 2026" (editable)
-9. **Category** — dropdown badge (filter, editable). Options: Fendi Energy Project 2024, Armani, Bouc. Energy Project, LEED Platinum, Fendi Energy Project, Schneider Reconfiguration, LEED Gold, LEED, Energy Monitoring Project
-10. **PO** — comma-separated badges from `ops_purchase_orders.po_number` joined via `hardwares.purchase_order_id` filtered by `site_id`
-11. **Installer** — text (editable)
-12. **Package** — *merged* column (filter: A · B · Customized).
-    - If `category = "Fendi Energy Project 2024"` → dropdown A / B
-    - Else → fixed badge "Customized"
-    - Stored in new column `package_type` (enum)
-13. **Additional Sensors** — computed from CT Builder snapshot vs package capacity
-14. **Additional Bridge** — computed similarly
-15. **No of Pan-10 / Pan-12 / Pan-14** — from snapshot
-16. **No of CT** — equals No of Pan-14
-17. **No of Mango** — from snapshot
-18. **Total Sensors** — sum Pan-10/12/14
-19. **Total Bridge** — `1 + additional_bridge`
+### 1. Visible per-row edit affordance
+- Add a small **leading "row handle" cell** at the very start of each row (before the sticky Project cell) containing a `Pencil` icon button (ghost, `h-6 w-6`, muted color).
+- The icon is always rendered but only fully visible on `group-hover` (opacity 40 → 100) so the table stays clean at rest.
+- Clicking it opens the **first editable cell of that row** (Status) in edit mode — implemented by lifting an `editingRowId` state into `EnergyTable` and passing it down so the row can auto-focus its first `EditCell`.
+- Keep the existing click-to-edit on individual cells (no regression).
+- Update the helper text under the filters to: *"Click the pencil to edit a row, or click any cell directly."*
 
-Costs (admin only):
-20. **Bridge Total Cost** — `products.unit_price` × bridge qty (match name "FGB Bridge LAN/LTE")
-21. **Sensor Total Cost** — `products.unit_price` × sensor qty (match "FGB-10/12/14")
-22. **Total Package cost ($)** — bridge + sensor + (mango unit price × qty)
-23. **Total Package cost (€)** — × `fx_rate_usd_eur` (0.86)
-24. **Duty customs fee (inbound)** — `ops_shipments.customs_cost` where `shipment_type='inbound'` and PO matches
-25. **VAT fee** — `ops_shipments.vat` (inbound)
-26. **Pick-up Cost** — `ops_shipments.total_shipping_cost` (inbound) *— spec says `shipment_cost`; the column in DB is `total_shipping_cost`. Will use that.*
-27. **Shipment cost** — `ops_shipments.total_shipping_cost` (outbound)
-28. **Outbound Custom cost** — `ops_shipments.customs_cost` (outbound)
-29. **Installation Cost** — editable, `installation_cost`
-30. **Quotation Value** — editable, `quotation_value`
-31. **Company cost 20%** — `0.2 × installation_cost`
-32. **FGB resource** — `50 × Σ activity hours` (constant 6.0833 → €304.17 default; editable override `fgb_resource`)
-33. **Total Cost** — `Pkg€ + Duty + VAT + Pickup + Shipment + Installation + Company + FGB`
-34. **Planned Remaining Value** — `Quotation − Total Cost`
-35. **Taxes** — `Planned Remaining × 0.27`
-36. **Profit** — `Planned Remaining − Taxes`
-37. **ROI** — `Profit / Quotation`
+### 2. Visible cell edit affordance
+- Inside `EditCell` (idle state), render a tiny `Pencil` icon at the top-right of the cell, `opacity-0 group-hover/cell:opacity-60`. Wrap the `<td>` with `group/cell` so each cell gets its own hover indicator independent of row hover.
+- Keeps the spreadsheet feel but makes editability discoverable.
 
-Network section — collapsed, toggled by single button "Show Configuration Specifications":
-38. Tracking Number (from `ops_shipments` outbound)
-39–44. IP configuration / Assigned Port / IP address / Subnet Mask / Gateway / DNS 1 / DNS 2 (all editable on `site_energy_records`)
-45. **Online Status** — always visible, editable
+### 3. Fix "Upcoming" overlap
+- Root cause: the Project sticky `<td>` and the Status `<td>` share the same row but the status badge wraps under the Project cell because of negative spacing/whitespace. Fix by:
+  - Giving the Project sticky cell a fixed `min-w-[200px] max-w-[240px]` and `truncate` on long names.
+  - Ensuring the Status `<td>` has `min-w-[110px]` so the pill always fits without flex collapse.
+  - Removing the absolutely-positioned `Loader2` / `Check` save markers from inside the cell flow when the cell holds a badge — render them as a small dot in the corner with `pointer-events-none` so they don't shift the badge.
 
-Hidden by default but filterable: Brand, Region, Country, City (exposed in filter bar only).
-Removed: Address, Reference Contact, Additional PAN-42.
-
-## Database changes
-
-Migration adds to `site_energy_records`:
-- `package_type text` (check in 'A','B','Customized')
-- `additional_sensors int default 0`, `additional_bridge int default 0`
-- `installation_date date`, `contracted boolean default true`
-- `frequency int` already present
-- `online_status text` already present
-- `fgb_resource numeric` already present (override)
-
-No data migration; defaults handled in code.
-
-## Data fetching
-
-New hook `useMonitorRows()` in `src/hooks/useMonitorRows.ts`:
-1. `site_energy_records` rows (with `profiles!pm_id(display_name)`)
-2. For each `site_id`, fetch `hardwares(purchase_order_id, ops_purchase_orders(po_number))` → group POs per site
-3. For each PO id, fetch `ops_shipments` → group inbound/outbound aggregates per record
-4. `useEnergyProductPrices()` for live unit prices
-5. Compose into `MonitorRow[]` with all derived fields via a `deriveFinance(row, prices, shipments)` helper extracted from `energyFinance.ts`
-
-## UI
-
-`src/pages/Monitor.tsx`:
-- Top filter bar: Project, Brand, Region, Country, City, Status, Frequency, Free SW year, PM, Category, Package
-- Single horizontally scrollable table, sticky first 3 columns (Project, Status, PM)
-- Section group headers in the header row: Site · Hardware · Costs · Network
-- "Show Configuration Specifications" toggle reveals network columns
-- Costs section visible only when `isAdmin`
-- Inline editing: click a cell → input/select → blur saves via `updateRecord(id, patch)`
-- PM cell shows display name; click navigates to `/projects/:certification_id`
-- PO cell renders small badges, comma-joined fallback
-
-Components extracted:
-- `MonitorFilters.tsx`
-- `MonitorTable.tsx`
-- `MonitorEditableCell.tsx` (text/number/date/select variants)
-- `MonitorPackageCell.tsx` (category-aware A/B vs Customized)
+### 4. Small polish
+- Increase the sticky Project column z-index over the group-header row so the Site Info banner doesn't show through.
+- Add `bg-clip-padding` to sticky cells to prevent the border from leaking transparency.
 
 ## Files touched
-- migration (new) — add columns above
-- `src/types/site-energy.ts` — extend interface
-- `src/hooks/useMonitorRows.ts` (new)
-- `src/lib/energyFinance.ts` — add `deriveFinance(row, ctx)` for table rows
-- `src/pages/Monitor.tsx` — rewritten around new hook
-- `src/components/monitor/*` (new files above)
+- `src/pages/Monitor.tsx` — add row handle column, lift `editingRowId` state, add hover pencil to `EditCell`, fix widths on Project/Status cells.
 
-## Open question
-Spec mentions `shipment_cost` and `customs_fee` on `ops_shipments`; DB has `total_shipping_cost` and `customs_cost`. I'll use the DB columns. Pickup vs shipment for inbound is the same field — both spec lines map to inbound `total_shipping_cost` (Pickup) and outbound `total_shipping_cost` (Shipment). Confirm OK.
+No backend, no schema, no data-hook changes.
