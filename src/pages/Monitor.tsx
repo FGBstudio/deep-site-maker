@@ -171,7 +171,7 @@ function EnergyTable() {
             </div>
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground inline-flex items-center gap-1">
-            <Pencil className="h-3 w-3" /> Click any cell to edit — changes save automatically.
+            <Pencil className="h-3 w-3" /> Hover a row to reveal the edit pencil, or click any cell directly — changes save automatically.
           </p>
         </CardContent>
       </Card>
