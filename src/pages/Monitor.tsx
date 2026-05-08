@@ -291,17 +291,29 @@ interface RowProps {
 
 function Row({ r, idx, isAdmin, showNetwork, onUpdate }: RowProps) {
   const isFendi24 = r.category === "Fendi Energy Project 2024";
+  const [autoEdit, setAutoEdit] = useState(false);
   // Use solid backgrounds (no alpha) so the sticky first column doesn't bleed through.
   const zebra = idx % 2 === 0 ? "bg-card" : "bg-muted";
 
   return (
     <tr className={cn("group transition-colors", zebra, "hover:bg-primary/5")}>
-      <td className={cn("px-3 py-2 font-medium sticky left-0 z-[15] whitespace-nowrap border-b border-border shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]", zebra, "group-hover:bg-primary/5")}>
-        {r.project_name ?? "—"}
-        {r.city && <div className="text-[10px] text-muted-foreground font-normal">{r.city}{r.country ? `, ${r.country}` : ""}</div>}
+      <td className={cn("px-1.5 py-2 border-b border-border align-middle text-center", zebra, "group-hover:bg-primary/5")}>
+        <button
+          type="button"
+          onClick={() => setAutoEdit(true)}
+          className="opacity-30 group-hover:opacity-100 transition-opacity inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary"
+          title="Edit row"
+          aria-label="Edit row"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
       </td>
-      <EditCell value={r.status} options={STATUS_OPTIONS as readonly string[]} onSave={(v) => onUpdate(r.id, { status: v })}
-        render={(v) => <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full border text-[10.5px] font-medium", statusTone(v))}>{v ?? "—"}</span>} />
+      <td className={cn("px-3 py-2 font-medium sticky left-0 z-[15] border-b border-border shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)] min-w-[200px] max-w-[240px]", zebra, "group-hover:bg-primary/5")}>
+        <div className="truncate">{r.project_name ?? "—"}</div>
+        {r.city && <div className="text-[10px] text-muted-foreground font-normal truncate">{r.city}{r.country ? `, ${r.country}` : ""}</div>}
+      </td>
+      <EditCell value={r.status} options={STATUS_OPTIONS as readonly string[]} forceEdit={autoEdit} onForceEditDone={() => setAutoEdit(false)} minWidth={110} onSave={(v) => onUpdate(r.id, { status: v })}
+        render={(v) => <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full border text-[10.5px] font-medium whitespace-nowrap", statusTone(v))}>{v ?? "—"}</span>} />
       <EditCell value={r.frequency != null ? String(r.frequency) : null} options={["50", "60"]} onSave={(v) => onUpdate(r.id, { frequency: v ? Number(v) : null })} render={(v) => <span>{v ? `${v} Hz` : "—"}</span>} />
       <EditCell value={r.free_software_year != null ? String(r.free_software_year) : "3"} type="number" onSave={(v) => onUpdate(r.id, { free_software_year: v ? Number(v) : null })} />
       <EditCell value={r.installation_date} type="date" onSave={(v) => onUpdate(r.id, { installation_date: v || null })} render={(v) => <span>{fmtDate(v)}</span>} />
