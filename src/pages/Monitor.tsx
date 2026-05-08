@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Search, Download, Eye, EyeOff, Pencil } from "lucide-react";
+import { Check, Download, Eye, EyeOff, Loader2, Pencil, Search } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -106,11 +106,12 @@ function EnergyTable() {
     });
   }, [rows, search, filters]);
 
-  const update = async (id: string, patch: SiteEnergyRecordPatch) => {
+  const update = async (id: string, patch: SiteEnergyRecordPatch): Promise<boolean> => {
     const { error } = await supabase.from("site_energy_records" as never).update(patch as never).eq("id", id);
-    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: "Save failed", description: error.message, variant: "destructive" }); return false; }
     toast({ title: "Saved", description: "Row updated." });
-    qc.invalidateQueries({ queryKey: ["monitor-energy-rows"] });
+    await qc.invalidateQueries({ queryKey: ["monitor-energy-rows"] });
+    return true;
   };
 
   const exportCSV = () => {
@@ -284,7 +285,7 @@ interface RowProps {
   idx: number;
   isAdmin: boolean;
   showNetwork: boolean;
-  onUpdate: (id: string, patch: SiteEnergyRecordPatch) => void;
+  onUpdate: (id: string, patch: SiteEnergyRecordPatch) => Promise<boolean>;
 }
 
 function Row({ r, idx, isAdmin, showNetwork, onUpdate }: RowProps) {
