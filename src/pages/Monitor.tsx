@@ -387,7 +387,7 @@ function NumCell({ n, fmt = fmtNum, bold, tone }: { n: number | null | undefined
 
 interface EditCellProps {
   value: string | null | undefined;
-  onSave: (v: string) => void;
+  onSave: (v: string) => Promise<boolean> | boolean | void;
   type?: "text" | "number" | "date";
   options?: readonly string[];
   right?: boolean;
@@ -412,7 +412,8 @@ function EditCell({ value, onSave, type = "text", options, right, mono, render }
     }
     setSaving(true);
     try {
-      await onSave(next);
+      const ok = await onSave(next);
+      if (ok === false) return;
       setSaved(true);
       window.setTimeout(() => setSaved(false), 900);
       setEditing(false);
