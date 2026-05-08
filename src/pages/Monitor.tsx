@@ -407,9 +407,12 @@ interface EditCellProps {
   right?: boolean;
   mono?: boolean;
   render?: (v: string | null | undefined) => React.ReactNode;
+  forceEdit?: boolean;
+  onForceEditDone?: () => void;
+  minWidth?: number;
 }
 
-function EditCell({ value, onSave, type = "text", options, right, mono, render }: EditCellProps) {
+function EditCell({ value, onSave, type = "text", options, right, mono, render, forceEdit, onForceEditDone, minWidth }: EditCellProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const [saving, setSaving] = useState(false);
@@ -418,6 +421,14 @@ function EditCell({ value, onSave, type = "text", options, right, mono, render }
   useEffect(() => {
     if (!editing) setDraft(value ?? "");
   }, [editing, value]);
+
+  useEffect(() => {
+    if (forceEdit) {
+      setDraft(value ?? "");
+      setEditing(true);
+      onForceEditDone?.();
+    }
+  }, [forceEdit, value, onForceEditDone]);
 
   const commit = async (next: string) => {
     if (next === (value ?? "")) {
@@ -436,9 +447,11 @@ function EditCell({ value, onSave, type = "text", options, right, mono, render }
     }
   };
 
+  const style = minWidth ? { minWidth } : undefined;
+
   if (editing && options) {
     return (
-      <td className="px-2 py-1 border-b border-border">
+      <td className="px-2 py-1 border-b border-border" style={style}>
         <Select value={draft} disabled={saving} onValueChange={(v) => { setDraft(v); void commit(v); }}>
           <SelectTrigger className="h-7 text-xs w-full ring-1 ring-primary/40"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -450,7 +463,7 @@ function EditCell({ value, onSave, type = "text", options, right, mono, render }
   }
   if (editing) {
     return (
-      <td className={cn("px-2 py-1 border-b border-border", right && "text-right")}>
+      <td className={cn("px-2 py-1 border-b border-border", right && "text-right")} style={style}>
         <Input
           type={type} value={draft} autoFocus disabled={saving}
           onChange={(e) => setDraft(e.target.value)}
@@ -466,8 +479,9 @@ function EditCell({ value, onSave, type = "text", options, right, mono, render }
   }
   return (
     <td
+      style={style}
       className={cn(
-        "relative px-3 py-2 cursor-text whitespace-nowrap border-b border-border hover:bg-primary/10 hover:ring-1 hover:ring-inset hover:ring-primary/30 transition-colors",
+        "group/cell relative px-3 py-2 cursor-text whitespace-nowrap border-b border-border hover:bg-primary/10 hover:ring-1 hover:ring-inset hover:ring-primary/30 transition-colors",
         saved && "bg-primary/10 ring-1 ring-inset ring-primary/30",
         right && "text-right tabular-nums",
         mono && "font-mono text-[10.5px]",
@@ -475,8 +489,13 @@ function EditCell({ value, onSave, type = "text", options, right, mono, render }
       onClick={() => { setDraft(value ?? ""); setEditing(true); }}
       title="Click to edit"
     >
-      {saving && <Loader2 className="absolute right-1 top-1 h-3 w-3 animate-spin text-primary" />}
-      {saved && <Check className="absolute right-1 top-1 h-3 w-3 text-primary" />}
+      {saving ? (
+        <Loader2 className="absolute right-1 top-1 h-3 w-3 animate-spin text-primary pointer-events-none" />
+      ) : saved ? (
+        <Check className="absolute right-1 top-1 h-3 w-3 text-primary pointer-events-none" />
+      ) : (
+        <Pencil className="absolute right-1 top-1 h-2.5 w-2.5 text-muted-foreground/60 opacity-0 group-hover/cell:opacity-100 transition-opacity pointer-events-none" />
+      )}
       {render ? render(value) : (value ?? <span className="text-muted-foreground/60">—</span>)}
     </td>
   );
