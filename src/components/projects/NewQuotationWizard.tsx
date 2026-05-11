@@ -60,11 +60,30 @@ interface SiteState {
   newCountry: string;
 }
 
+interface MonitoringFlags {
+  iaq: boolean;
+  energy: boolean;
+  water: boolean;
+  hardwareRedirect: boolean;
+}
+
 interface CertConfig {
   cert_type: CertType;
   cert_rating: string;
   cert_level: string;
   project_subtype: string;
+  flags: MonitoringFlags;
+}
+
+function emptyFlags(): MonitoringFlags {
+  return { iaq: false, energy: false, water: false, hardwareRedirect: false };
+}
+
+function showsIaqEnergyWater(t: CertType) {
+  return t === "LEED" || t === "WELL" || t === "BREEAM";
+}
+function showsEnergyRedirect(t: CertType) {
+  return t === "Energy_Audit";
 }
 
 interface ServicesState {
@@ -78,7 +97,7 @@ interface ServicesState {
   gbciFees: string;
   totalFees: string;
   quotationSentDate: Date | undefined;
-  fgbMonitor: boolean;
+  // fgbMonitor: deprecated — flags now live per-cert
   notes: string;
   paymentScheme: import("@/lib/paymentSchemes").PaymentSchemeId;
   customSal: { pct: string; trigger: import("@/lib/paymentSchemes").TriggerEvent; name: string }[];
@@ -94,7 +113,7 @@ function emptyServices(): ServicesState {
   return {
     projectName: "", client: "", region: "Europe", handoverDate: undefined,
     certifications: [], sqm: "", servicesFees: "", gbciFees: "", totalFees: "",
-    quotationSentDate: undefined, fgbMonitor: false, notes: "",
+    quotationSentDate: undefined, notes: "",
     paymentScheme: "quotation_construction_50_50",
     customSal: [{ pct: "100", trigger: "manual_sal", name: "SAL 1" }],
   };
@@ -141,7 +160,7 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
     if (checked) {
       setServices((s) => ({
         ...s,
-        certifications: [...s.certifications, { cert_type: type, cert_rating: "", cert_level: "", project_subtype: "" }],
+        certifications: [...s.certifications, { cert_type: type, cert_rating: "", cert_level: "", project_subtype: "", flags: emptyFlags() }],
       }));
     } else {
       setServices((s) => ({
@@ -151,13 +170,22 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
     }
   };
 
-  const updateCert = (type: CertType, field: keyof Omit<CertConfig, "cert_type">, value: string) => {
+  const updateCert = (type: CertType, field: keyof Omit<CertConfig, "cert_type" | "flags">, value: string) => {
     setServices((s) => ({
       ...s,
       certifications: s.certifications.map((c) =>
         c.cert_type === type
           ? { ...c, [field]: value, ...(field === "cert_rating" ? { project_subtype: "" } : {}) }
           : c
+      ),
+    }));
+  };
+
+  const updateCertFlag = (type: CertType, flag: keyof MonitoringFlags, value: boolean) => {
+    setServices((s) => ({
+      ...s,
+      certifications: s.certifications.map((c) =>
+        c.cert_type === type ? { ...c, flags: { ...c.flags, [flag]: value } } : c
       ),
     }));
   };
@@ -250,7 +278,11 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
           level: cert.cert_rating || null,
           score: 0,
           sqm: services.sqm ? Number(services.sqm) : null,
-          fgb_monitor: services.fgbMonitor,
+          fgb_monitor: cert.flags.energy, // legacy mirror
+          has_iaq_monitoring: cert.flags.iaq,
+          has_energy_monitoring: cert.flags.energy,
+          has_water_monitoring: cert.flags.water,
+          has_hardware_redirection: cert.flags.hardwareRedirect,
           services_fees: services.servicesFees ? Number(services.servicesFees) : null,
           gbci_fees: services.gbciFees ? Number(services.gbciFees) : null,
           total_fees: services.totalFees ? Number(services.totalFees) : null,
@@ -529,6 +561,43 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
                       </Select>
                     </div>
                   </div>
+
+                  {/* Monitoring services */}
+                  {(showsIaqEnergyWater(cert.cert_type) || showsEnergyRedirect(cert.cert_type)) && (
+                    <div className="mt-4 pt-3 border-t border-border/50">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Monitoring services</p>
+                      <div className="flex flex-wrap gap-x-5 gap-y-2">
+                        {showsIaqEnergyWater(cert.cert_type) && (
+                          <>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                              <Checkbox checked={cert.flags.iaq} onCheckedChange={(v) => updateCertFlag(cert.cert_type, "iaq", !!v)} />
+                              ClAir IAQ
+                            </label>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                              <Checkbox checked={cert.flags.energy} onCheckedChange={(v) => updateCertFlag(cert.cert_type, "energy", !!v)} />
+                              Greeny Energy
+                            </label>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                              <Checkbox checked={cert.flags.water} onCheckedChange={(v) => updateCertFlag(cert.cert_type, "water", !!v)} />
+                              Water
+                            </label>
+                          </>
+                        )}
+                        {showsEnergyRedirect(cert.cert_type) && (
+                          <>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                              <Checkbox checked={cert.flags.energy} onCheckedChange={(v) => updateCertFlag(cert.cert_type, "energy", !!v)} />
+                              Greeny Energy
+                            </label>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                              <Checkbox checked={cert.flags.hardwareRedirect} onCheckedChange={(v) => updateCertFlag(cert.cert_type, "hardwareRedirect", !!v)} />
+                              Hardware Redirection
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -574,14 +643,6 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
               <Calendar mode="single" selected={services.quotationSentDate} onSelect={(d) => setServices((s) => ({ ...s, quotationSentDate: d }))} initialFocus className="p-3" />
             </PopoverContent>
           </Popover>
-        </div>
-        <div className="flex items-center gap-3 pt-5">
-          <Checkbox
-            id="fgb-monitor"
-            checked={services.fgbMonitor}
-            onCheckedChange={(v) => setServices((s) => ({ ...s, fgbMonitor: !!v }))}
-          />
-          <Label htmlFor="fgb-monitor" className="text-sm cursor-pointer">FGB Monitor</Label>
         </div>
       </div>
 
@@ -644,14 +705,25 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
             <p className="text-sm text-muted-foreground italic">No services selected.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {services.certifications.map((c) => (
-                <div key={c.cert_type} className="px-3 py-1.5 rounded-lg border bg-primary/5 border-primary/20 text-sm">
-                  <span className="font-semibold text-primary">{c.cert_type}</span>
-                  {c.cert_rating && <span className="text-muted-foreground ml-1">· {c.cert_rating}</span>}
-                  {c.cert_level && <span className="text-muted-foreground ml-1">· {c.cert_level}</span>}
-                  {c.project_subtype && <span className="text-muted-foreground ml-1">· {c.project_subtype}</span>}
-                </div>
-              ))}
+              {services.certifications.map((c) => {
+                const monitoring = [
+                  c.flags.iaq && "IAQ",
+                  c.flags.energy && "Energy",
+                  c.flags.water && "Water",
+                  c.flags.hardwareRedirect && "HW Redirect",
+                ].filter(Boolean) as string[];
+                return (
+                  <div key={c.cert_type} className="px-3 py-1.5 rounded-lg border bg-primary/5 border-primary/20 text-sm">
+                    <span className="font-semibold text-primary">{c.cert_type}</span>
+                    {c.cert_rating && <span className="text-muted-foreground ml-1">· {c.cert_rating}</span>}
+                    {c.cert_level && <span className="text-muted-foreground ml-1">· {c.cert_level}</span>}
+                    {c.project_subtype && <span className="text-muted-foreground ml-1">· {c.project_subtype}</span>}
+                    {monitoring.length > 0 && (
+                      <span className="ml-2 text-emerald-700">· {monitoring.join(" + ")}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -668,7 +740,6 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
               {services.totalFees && <div><p className="text-muted-foreground text-xs">Total fees</p><p className="font-semibold text-foreground">€{Number(services.totalFees).toLocaleString()}</p></div>}
               {services.quotationSentDate && <div><p className="text-muted-foreground text-xs">Sent on</p><p className="font-medium">{format(services.quotationSentDate, "dd MMM yyyy")}</p></div>}
               {services.sqm && <div><p className="text-muted-foreground text-xs">Area</p><p className="font-medium">{services.sqm} sqm</p></div>}
-              {services.fgbMonitor && <div><p className="text-muted-foreground text-xs">FGB Monitor</p><p className="font-medium">Yes</p></div>}
             </div>
             {services.notes && <p className="text-xs text-muted-foreground mt-2 italic">"{services.notes}"</p>}
           </CardContent>
