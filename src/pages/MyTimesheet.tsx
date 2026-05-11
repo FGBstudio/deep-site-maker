@@ -71,20 +71,10 @@ export default function MyTimesheet() {
   const days = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
 
   return (
-    <MainLayout>
+    <MainLayout title="My Timesheet" subtitle="Log hours per certification — frictionless, no blocks.">
       <TooltipProvider>
-        <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-          <header className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Clock className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">My Timesheet</h1>
-                <p className="text-sm text-muted-foreground">Log hours per certification — frictionless, no blocks.</p>
-              </div>
-            </div>
-
+        <div className="max-w-5xl mx-auto space-y-6">
+          <header className="flex items-center justify-end flex-wrap gap-4">
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
