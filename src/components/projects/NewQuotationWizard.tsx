@@ -604,10 +604,6 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
           })}
         </div>
       )}
-            );
-          })}
-        </div>
-      )}
 
       <Separator />
 
