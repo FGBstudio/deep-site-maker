@@ -23,7 +23,7 @@ export function useWeeklyReport(targetUserId: string | null, weekStartISO: strin
     enabled: !!userId,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("weekly_reports" as never)
+        .from("weekly_reports" as any)
         .select("*")
         .eq("user_id", userId!)
         .eq("week_start", weekStartISO)
@@ -40,7 +40,7 @@ export function useWeeklyReport(targetUserId: string | null, weekStartISO: strin
     enabled: !!userId,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("time_entries" as never)
+        .from("time_entries" as any)
         .select("certification_id, hours, description, entry_date")
         .eq("user_id", userId!)
         .gte("entry_date", weekStartISO)
@@ -82,7 +82,7 @@ export function useWeeklyReport(targetUserId: string | null, weekStartISO: strin
         last_edited_at: new Date().toISOString(),
       };
       const { data, error } = await supabase
-        .from("weekly_reports" as never)
+        .from("weekly_reports" as any)
         .upsert(payload, { onConflict: "user_id,week_start" })
         .select()
         .single();
@@ -99,7 +99,7 @@ export function useWeeklyReport(targetUserId: string | null, weekStartISO: strin
       if (role !== "ADMIN") throw new Error("Only admins can unlock");
       if (!reportQuery.data?.id) throw new Error("No report");
       const { error } = await supabase
-        .from("weekly_reports" as never)
+        .from("weekly_reports" as any)
         .update({ status: "saved", locked_at: null })
         .eq("id", reportQuery.data.id);
       if (error) throw error;
