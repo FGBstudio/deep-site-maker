@@ -51,6 +51,8 @@ import { useAuth } from "@/contexts/AuthContext";
 const fmtDb = (d: Date) => format(d, "yyyy-MM-dd");
 
 export default function MyTimesheet() {
+  const { role } = useAuth();
+  const isAdmin = role === "ADMIN";
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
   const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 1 });
