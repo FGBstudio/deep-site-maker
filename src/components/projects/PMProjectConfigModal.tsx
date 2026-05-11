@@ -18,6 +18,7 @@ import { addDays, format, parseISO } from "date-fns";
 import { getTemplateOrFallback, type TimelineStep } from "@/data/certificationTemplates";
 import type { PMProject } from "@/hooks/usePMDashboard";
 import { TimelineSetupWizard } from "./TimelineSetupWizard";
+import { MonitoringSuggestionBanner } from "./MonitoringSuggestionBanner";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface Props {
