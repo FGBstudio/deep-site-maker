@@ -4274,6 +4274,15 @@ export type Database = {
         Args: { p_device_id: string; p_tz: string }
         Returns: number
       }
+      _shift_energy_site_timestamps: {
+        Args: { p_fix_version: string; p_shift: string; p_site_id: string }
+        Returns: {
+          rows_daily: number
+          rows_hourly: number
+          rows_latest: number
+          rows_raw: number
+        }[]
+      }
       _tz_fix_list_devices: {
         Args: { p_site_id: string }
         Returns: {
