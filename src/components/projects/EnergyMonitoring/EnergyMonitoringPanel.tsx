@@ -174,17 +174,8 @@ export function EnergyMonitoringPanel({ certificationId, isAdmin }: Props) {
         .from("site_energy_records" as never)
         .upsert(recordPayload as never, { onConflict: "certification_id" });
 
-      // 4. Emit alert
-      await supabase.from("task_alerts").insert({
-        certification_id: certificationId,
-        created_by: user.id,
-        alert_type: "pm_operational",
-        title: "Energy quote accepted — devices requested for site",
-        description: `Monitoring Team confirmed: ${result.bom
-          .map((b) => `${b.quantity}× ${b.hardware}`)
-          .join(", ")}.`,
-        escalate_to_admin: true,
-      });
+      // 4. Alerts: handled atomically by rpc_confirm_energy_ct_build
+      //    (resolves monitoring_energy_requested and inserts monitoring_energy_ready_to_assign).
 
       qc.invalidateQueries({ queryKey: ["task-alerts"] });
       qc.invalidateQueries({ queryKey: ["site-energy-records"] });
