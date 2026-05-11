@@ -97,7 +97,7 @@ interface ServicesState {
   gbciFees: string;
   totalFees: string;
   quotationSentDate: Date | undefined;
-  fgbMonitor: boolean;
+  // fgbMonitor: deprecated — flags now live per-cert
   notes: string;
   paymentScheme: import("@/lib/paymentSchemes").PaymentSchemeId;
   customSal: { pct: string; trigger: import("@/lib/paymentSchemes").TriggerEvent; name: string }[];
@@ -113,7 +113,7 @@ function emptyServices(): ServicesState {
   return {
     projectName: "", client: "", region: "Europe", handoverDate: undefined,
     certifications: [], sqm: "", servicesFees: "", gbciFees: "", totalFees: "",
-    quotationSentDate: undefined, fgbMonitor: false, notes: "",
+    quotationSentDate: undefined, notes: "",
     paymentScheme: "quotation_construction_50_50",
     customSal: [{ pct: "100", trigger: "manual_sal", name: "SAL 1" }],
   };
