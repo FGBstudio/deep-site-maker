@@ -43,6 +43,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { WeeklyReportCanvas } from "@/components/timesheet/WeeklyReportCanvas";
+import { AdminWeeklyReportsBrowser } from "@/components/timesheet/AdminWeeklyReportsBrowser";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/contexts/AuthContext";
 
 const fmtDb = (d: Date) => format(d, "yyyy-MM-dd");
 
