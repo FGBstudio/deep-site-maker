@@ -175,6 +175,20 @@ export default function MyTimesheet() {
 
           {/* Quick add */}
           <QuickAddBar selectedDate={selectedDate} />
+
+          {/* Weekly report canvas */}
+          {isAdmin ? (
+            <Tabs defaultValue="mine" className="space-y-3">
+              <TabsList>
+                <TabsTrigger value="mine">My weekly report</TabsTrigger>
+                <TabsTrigger value="team">Team reports</TabsTrigger>
+              </TabsList>
+              <TabsContent value="mine"><WeeklyReportCanvas /></TabsContent>
+              <TabsContent value="team"><AdminWeeklyReportsBrowser /></TabsContent>
+            </Tabs>
+          ) : (
+            <WeeklyReportCanvas />
+          )}
         </div>
       </TooltipProvider>
     </MainLayout>
