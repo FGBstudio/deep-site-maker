@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Inbox,
   Contact as ContactIcon,
+  Clock,
 } from "lucide-react";
 
 interface NavItem {
