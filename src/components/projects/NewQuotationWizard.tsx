@@ -740,7 +740,6 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
               {services.totalFees && <div><p className="text-muted-foreground text-xs">Total fees</p><p className="font-semibold text-foreground">€{Number(services.totalFees).toLocaleString()}</p></div>}
               {services.quotationSentDate && <div><p className="text-muted-foreground text-xs">Sent on</p><p className="font-medium">{format(services.quotationSentDate, "dd MMM yyyy")}</p></div>}
               {services.sqm && <div><p className="text-muted-foreground text-xs">Area</p><p className="font-medium">{services.sqm} sqm</p></div>}
-              {services.fgbMonitor && <div><p className="text-muted-foreground text-xs">FGB Monitor</p><p className="font-medium">Yes</p></div>}
             </div>
             {services.notes && <p className="text-xs text-muted-foreground mt-2 italic">"{services.notes}"</p>}
           </CardContent>
