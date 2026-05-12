@@ -393,9 +393,21 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
           .upsert(payload as never, { onConflict: "certification_id" });
       }
 
+      // 5. Air metrics
+      if (mode === "AIR") {
+        const { data: refreshed } = await supabase
+          .from("hardwares")
+          .select("id, device_id, mac_address, po, shipment_date, category, status")
+          .eq("site_id", selectedSiteId)
+          .neq("status", "In Stock");
+        
+        // AIR monitoring dashboard is handled automatically by DB triggers
+      }
+
       qc.invalidateQueries({ queryKey: ["project-allocations", certificationId] });
       qc.invalidateQueries({ queryKey: ["hardwares-on-site", selectedSiteId] });
       qc.invalidateQueries({ queryKey: ["site-energy-records"] });
+      qc.invalidateQueries({ queryKey: ["monitor-air-rows"] });
       qc.invalidateQueries({ queryKey: ["ops_shipments"] }); // Refresh logistics too
 
 
