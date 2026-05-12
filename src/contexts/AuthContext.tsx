@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/types/custom-tables";
@@ -48,6 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // SCUDO ANTI-RESET: Usiamo una ref per tracciare l'ID utente attualmente caricato.
+  // Evita che i ping in background di Supabase causino un re-render distruttivo (loading=true).
+  const loadedUserId = useRef<string | null>(null);
+
   const fetchUserData = async (userId: string) => {
     const [profileRes, rolesRes, roleRes] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).single(),
@@ -76,47 +80,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        // Only react to actual sign-in / sign-out. Ignore TOKEN_REFRESHED,
-        // USER_UPDATED, INITIAL_SESSION etc. — otherwise we reset loading/role
-        // periodically and ProtectedRoute bounces the user back to the default page.
+    let mounted = true;
+
+    const handleSession = async (currentSession: Session | null, event?: string) => {
+      if (!mounted) return;
+
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+
+      if (currentSession?.user) {
+        const userId = currentSession.user.id;
+
+        // Se l'utente è cambiato (o è il primissimo avvio), scarichiamo i dati
+        if (loadedUserId.current !== userId) {
+          loadedUserId.current = userId;
+          setLoading(true);
+          await fetchUserData(userId);
+          if (mounted) setLoading(false);
+        }
+      } else if (event === "SIGNED_OUT" || !currentSession) {
+        // Logout effettivo o sessione inesistente
+        loadedUserId.current = null;
+        setProfile(null);
+        setRole(null);
+        if (mounted) setLoading(false);
+      }
+    };
+
+    // Ascolta i cambiamenti di stato di Supabase
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Ignora silenziosamente gli aggiornamenti minori del token.
+      // Modifica solo la sessione senza innescare ricaricamenti.
+      if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
         setSession(session);
         setUser(session?.user ?? null);
-
-        if (event === "SIGNED_IN" && session?.user) {
-          setLoading(true);
-          setProfile(null);
-          setRole(null);
-          setTimeout(() => {
-            void fetchUserData(session.user.id).finally(() => setLoading(false));
-          }, 0);
-        } else if (event === "SIGNED_OUT") {
-          setProfile(null);
-          setRole(null);
-          setLoading(false);
-        }
+        return;
       }
-    );
-
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        setLoading(true);
-        setProfile(null);
-        setRole(null);
-        await fetchUserData(session.user.id);
-      } else {
-        setProfile(null);
-        setRole(null);
-      }
-
-      setLoading(false);
+      void handleSession(session, event);
     });
 
-    return () => subscription.unsubscribe();
+    // Controllo iniziale all'apertura dell'app
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      void handleSession(session, "INITIAL");
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -135,8 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setProfile(null);
-    setRole(null);
+    // Non azzeriamo lo state qui, se ne occupa l'evento "SIGNED_OUT" nell'useEffect
   };
 
   return (
