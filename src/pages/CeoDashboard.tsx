@@ -576,7 +576,7 @@ export default function CeoDashboard() {
   }, [calendarProjects]);
 
   return (
-    <MainLayout title="CEO Dashboard" subtitle="Executive control hub — Certifications & Portfolio">
+    <MainLayout title="Admin Dashboard" subtitle="Executive control hub — Certifications & Portfolio">
       {isLoading ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
