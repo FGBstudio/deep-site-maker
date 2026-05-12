@@ -152,13 +152,14 @@ export function AirTable() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200">
-                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider sticky left-0 bg-slate-50/80 z-20"><span className="flex items-center gap-1.5"><Activity className="w-3.5 h-3.5" /> Project</span></th>
-                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider"><span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Location</span></th>
-                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider"><span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> PM</span></th>
-                  <th className="px-4 py-3.5 text-center text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-24">Sensors</th>
-                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-40"><span className="flex items-center gap-1.5"><Package className="w-3.5 h-3.5" /> PO Numbers</span></th>
-                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider min-w-[200px]">Notes</th>
-                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-40">Status</th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider sticky left-0 bg-slate-50/80 z-20 min-w-[320px]"><span className="flex items-center gap-1.5"><Activity className="w-3.5 h-3.5" /> Project & Location</span></th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-36"><span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> PM</span></th>
+                  <th className="px-4 py-3.5 text-center text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-32">No. of Sensors Assigned</th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-32"><span className="flex items-center gap-1.5"><Package className="w-3.5 h-3.5" /> PO Numbers</span></th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-32"><span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Handover Date</span></th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-32"><span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Shipment Date</span></th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider min-w-[180px]">Notes</th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-28">Status</th>
                   <th className="px-4 py-3.5 text-center text-[11px] font-semibold text-slate-500 uppercase tracking-wider w-20">Actions</th>
                 </tr>
               </thead>
@@ -206,10 +207,12 @@ function AirRow({ r, idx, isAdmin, onUpdate }: { r: AirMonitorRow; idx: number; 
 
   return (
     <tr className={cn("group transition-colors duration-150", baseBg, "hover:bg-slate-50/80")}>
-      <td className={cn("px-4 py-4 font-semibold text-slate-800 sticky left-0 z-10", editing ? "bg-sky-50/60" : isEven ? "bg-white" : "bg-slate-50/40", "group-hover:bg-slate-50/80")}>
-        <div className="flex flex-col"><span className="text-sm">{r.project_name}</span><span className="text-[10px] text-slate-400 font-normal">{r.city}{r.city && r.country ? ", " : ""}{r.country}</span></div>
+      <td className={cn("px-4 py-4 font-semibold text-slate-800 sticky left-0 z-10", editing ? "bg-sky-50/60" : isEven ? "bg-white" : "bg-slate-50/40", "group-hover:bg-slate-50/80 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]")}>
+        <div className="flex flex-col">
+          <span className="text-sm font-bold tracking-tight">{r.project_name}</span>
+          <span className="text-[10px] text-slate-400 font-normal mt-0.5">{r.city}{r.city && r.country ? ", " : ""}{r.country}</span>
+        </div>
       </td>
-      <td className="px-4 py-4 whitespace-nowrap text-slate-600"><div className="flex flex-col"><span className="text-sm">{r.region ?? "—"}</span><span className="text-[11px] text-slate-400">{r.country ?? "—"}</span></div></td>
       <td className="px-4 py-4 text-sm text-slate-600">
         {r.pm_name ? (
           <div className="flex items-center gap-2">
@@ -242,6 +245,16 @@ function AirRow({ r, idx, isAdmin, onUpdate }: { r: AirMonitorRow; idx: number; 
           )) : <span className="text-slate-400">—</span>}
         </div>
       </td>
+      <td className="px-4 py-4 whitespace-nowrap">
+        <span className="text-xs text-slate-600 font-medium">
+          {r.handover_date ? format(new Date(r.handover_date), "MMM d, yy") : <span className="text-slate-300 italic">No date</span>}
+        </span>
+      </td>
+      <td className="px-4 py-4 whitespace-nowrap">
+        <span className="text-xs text-slate-500">
+          {r.latest_shipment_date ? format(new Date(r.latest_shipment_date), "MMM d, yy") : <span className="text-slate-300 italic">—</span>}
+        </span>
+      </td>
       <td className="px-4 py-4 max-w-[200px]">
         {!editing ? <p className="text-sm text-slate-600 truncate" title={r.notes ?? undefined}>{r.notes || <span className="text-slate-300 italic">No notes</span>}</p> : <Input value={patch.notes ?? r.notes ?? ""} onChange={e => setPatch(p => ({ ...p, notes: e.target.value }))} className="h-8 text-xs bg-white focus-visible:ring-indigo-500/20" />}
       </td>
@@ -271,10 +284,10 @@ function StatusBadge({ status }: { status: string | null }) {
   const cfg = configs.find(c => c.test.test(s)) ?? configs[2];
   const Icon = cfg.icon;
   return (
-    <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border", cfg.color)}>
-      <span className={cn("w-1.5 h-1.5 rounded-full", cfg.dot, cfg.spin && "animate-pulse")} />
-      <Icon className={cn("w-3 h-3", cfg.spin && "animate-spin")} />
-      <span className="truncate max-w-[140px]">{display}</span>
+    <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9.5px] font-bold uppercase tracking-wide border whitespace-nowrap", cfg.color)}>
+      <span className={cn("w-1 h-1 rounded-full", cfg.dot, cfg.spin && "animate-pulse")} />
+      <Icon className={cn("w-2.5 h-2.5", cfg.spin && "animate-spin")} />
+      <span className="truncate max-w-[120px]">{display}</span>
     </span>
   );
 }
