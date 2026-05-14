@@ -81,10 +81,33 @@ interface CertConfig {
   cert_level: string;
   project_subtype: string;
   flags: MonitoringFlags;
+  // Quotation fields per certification
+  services_fees: string;
+  gbci_fees: string;
+  total_fees: string;
+  quote_mode: "direct" | "builder";
+  builder: BudgetBuilderState;
+  builder_applied: boolean;
 }
 
 function emptyFlags(): MonitoringFlags {
   return { iaq: false, energy: false, water: false, hardwareRedirect: false };
+}
+
+function emptyCertConfig(type: CertType): CertConfig {
+  return {
+    cert_type: type,
+    cert_rating: "",
+    cert_level: "",
+    project_subtype: "",
+    flags: emptyFlags(),
+    services_fees: "",
+    gbci_fees: "",
+    total_fees: "",
+    quote_mode: "direct",
+    builder: emptyBuilder(),
+    builder_applied: false,
+  };
 }
 
 function showsIaqEnergyWater(t: CertType) {
