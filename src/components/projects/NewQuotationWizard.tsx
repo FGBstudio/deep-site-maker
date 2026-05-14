@@ -194,7 +194,7 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
     if (checked) {
       setServices((s) => ({
         ...s,
-        certifications: [...s.certifications, { cert_type: type, cert_rating: "", cert_level: "", project_subtype: "", flags: emptyFlags() }],
+        certifications: [...s.certifications, emptyCertConfig(type)],
       }));
     } else {
       setServices((s) => ({
