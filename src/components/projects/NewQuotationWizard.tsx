@@ -124,11 +124,7 @@ interface ServicesState {
   handoverDate: Date | undefined;
   certifications: CertConfig[];
   sqm: string;
-  servicesFees: string;
-  gbciFees: string;
-  totalFees: string;
   quotationSentDate: Date | undefined;
-  // fgbMonitor: deprecated — flags now live per-cert
   notes: string;
   paymentScheme: import("@/lib/paymentSchemes").PaymentSchemeId;
   customSal: { pct: string; trigger: import("@/lib/paymentSchemes").TriggerEvent; name: string }[];
