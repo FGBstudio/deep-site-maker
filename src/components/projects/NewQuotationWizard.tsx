@@ -162,9 +162,15 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
   const [services, setServices] = useState<ServicesState>(emptyServices());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [quoteMode, setQuoteMode] = useState<"direct" | "builder">("direct");
-  const [builder, setBuilder] = useState<BudgetBuilderState>(emptyBuilder());
-  const [builderApplied, setBuilderApplied] = useState(false);
+
+  // Per-cert quotation patch helper
+  const patchCert = (type: CertType, patch: Partial<CertConfig>) => {
+    setServices((s) => ({
+      ...s,
+      certifications: s.certifications.map((c) => (c.cert_type === type ? { ...c, ...patch } : c)),
+    }));
+  };
+
 
   const { data: holdings = [], isLoading: loadingHoldings } = useHoldings();
   const { data: brands = [], isLoading: loadingBrands } = useBrands(site.holdingId || undefined);
