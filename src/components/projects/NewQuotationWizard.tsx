@@ -81,10 +81,33 @@ interface CertConfig {
   cert_level: string;
   project_subtype: string;
   flags: MonitoringFlags;
+  // Quotation fields per certification
+  services_fees: string;
+  gbci_fees: string;
+  total_fees: string;
+  quote_mode: "direct" | "builder";
+  builder: BudgetBuilderState;
+  builder_applied: boolean;
 }
 
 function emptyFlags(): MonitoringFlags {
   return { iaq: false, energy: false, water: false, hardwareRedirect: false };
+}
+
+function emptyCertConfig(type: CertType): CertConfig {
+  return {
+    cert_type: type,
+    cert_rating: "",
+    cert_level: "",
+    project_subtype: "",
+    flags: emptyFlags(),
+    services_fees: "",
+    gbci_fees: "",
+    total_fees: "",
+    quote_mode: "direct",
+    builder: emptyBuilder(),
+    builder_applied: false,
+  };
 }
 
 function showsIaqEnergyWater(t: CertType) {
@@ -101,11 +124,7 @@ interface ServicesState {
   handoverDate: Date | undefined;
   certifications: CertConfig[];
   sqm: string;
-  servicesFees: string;
-  gbciFees: string;
-  totalFees: string;
   quotationSentDate: Date | undefined;
-  // fgbMonitor: deprecated — flags now live per-cert
   notes: string;
   paymentScheme: import("@/lib/paymentSchemes").PaymentSchemeId;
   customSal: { pct: string; trigger: import("@/lib/paymentSchemes").TriggerEvent; name: string }[];
@@ -120,7 +139,7 @@ function emptySite(): SiteState {
 function emptyServices(): ServicesState {
   return {
     projectName: "", client: "", region: "Europe", handoverDate: undefined,
-    certifications: [], sqm: "", servicesFees: "", gbciFees: "", totalFees: "",
+    certifications: [], sqm: "",
     quotationSentDate: undefined, notes: "",
     paymentScheme: "quotation_construction_50_50",
     customSal: [{ pct: "100", trigger: "manual_sal", name: "SAL 1" }],
@@ -143,9 +162,15 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
   const [services, setServices] = useState<ServicesState>(emptyServices());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [quoteMode, setQuoteMode] = useState<"direct" | "builder">("direct");
-  const [builder, setBuilder] = useState<BudgetBuilderState>(emptyBuilder());
-  const [builderApplied, setBuilderApplied] = useState(false);
+
+  // Per-cert quotation patch helper
+  const patchCert = (type: CertType, patch: Partial<CertConfig>) => {
+    setServices((s) => ({
+      ...s,
+      certifications: s.certifications.map((c) => (c.cert_type === type ? { ...c, ...patch } : c)),
+    }));
+  };
+
 
   const { data: holdings = [], isLoading: loadingHoldings } = useHoldings();
   const { data: brands = [], isLoading: loadingBrands } = useBrands(site.holdingId || undefined);
@@ -171,7 +196,7 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
     if (checked) {
       setServices((s) => ({
         ...s,
-        certifications: [...s.certifications, { cert_type: type, cert_rating: "", cert_level: "", project_subtype: "", flags: emptyFlags() }],
+        certifications: [...s.certifications, emptyCertConfig(type)],
       }));
     } else {
       setServices((s) => ({
@@ -219,6 +244,11 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
   const validateStep2 = (): boolean => {
     const errs: Record<string, string> = {};
     if (services.certifications.length === 0) errs.certs = "Select at least one certification service";
+    services.certifications.forEach((c) => {
+      const total = Number(c.total_fees);
+      const ok = c.quote_mode === "builder" ? c.builder_applied && total > 0 : total > 0;
+      if (!ok) errs[`total_${c.cert_type}`] = `Set a Total Quotation for ${c.cert_type}`;
+    });
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -240,9 +270,6 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
       setSite(emptySite());
       setServices(emptyServices());
       setErrors({});
-      setQuoteMode("direct");
-      setBuilder(emptyBuilder());
-      setBuilderApplied(false);
     }, 300);
   };
 
@@ -271,18 +298,17 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
 
       const handoverStr = format(services.handoverDate!, "yyyy-MM-dd");
 
-      // Compute builder snapshot once (when builder mode is used).
-      const useBuilder = quoteMode === "builder" && builderApplied;
-      const builderComputation = useBuilder ? computeBudget(builder) : null;
-      const allocatedHours = builderComputation
-        ? Math.round(builderComputation.effort_days * HOURS_PER_DAY * 100) / 100
-        : null;
-
       // 2. Insert one certification row per selected service
       for (const cert of services.certifications) {
         const name = services.certifications.length > 1
           ? `${services.projectName} – ${cert.cert_type}`
           : services.projectName;
+
+        const useBuilder = cert.quote_mode === "builder" && cert.builder_applied;
+        const builderComputation = useBuilder ? computeBudget(cert.builder) : null;
+        const allocatedHours = builderComputation
+          ? Math.round(builderComputation.effort_days * HOURS_PER_DAY * 100) / 100
+          : null;
 
         const { data: insertedCert, error: certErr } = await supabase
           .from("certifications")
@@ -306,9 +332,9 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
             has_energy_monitoring: cert.flags.energy,
             has_water_monitoring: cert.flags.water,
             has_hardware_redirection: cert.flags.hardwareRedirect,
-            services_fees: services.servicesFees ? Number(services.servicesFees) : null,
-            gbci_fees: services.gbciFees ? Number(services.gbciFees) : null,
-            total_fees: services.totalFees ? Number(services.totalFees) : null,
+            services_fees: cert.services_fees ? Number(cert.services_fees) : null,
+            gbci_fees: cert.gbci_fees ? Number(cert.gbci_fees) : null,
+            total_fees: cert.total_fees ? Number(cert.total_fees) : null,
             allocated_hours: allocatedHours,
             quotation_sent_date: services.quotationSentDate
               ? format(services.quotationSentDate, "yyyy-MM-dd")
@@ -325,8 +351,8 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
             total_suggested: builderComputation.suggested_total,
             total_cost: builderComputation.total_cost,
             total_effort_days: builderComputation.effort_days,
-            markup_pct: builder.markup_pct,
-            breakdown: { state: builder, computation: builderComputation } as never,
+            markup_pct: cert.builder.markup_pct,
+            breakdown: { state: cert.builder, computation: builderComputation } as never,
           } as never);
         }
       }
@@ -636,6 +662,92 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
                       </div>
                     </div>
                   )}
+
+                  {/* Per-cert Quotation Value */}
+                  <div className="mt-4 pt-3 border-t border-border/50 space-y-3">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quotation value · {cert.cert_type}</p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Services Fees (€)</Label>
+                        <Input type="number" className="h-8 text-sm" placeholder="e.g. 15,000"
+                          value={cert.services_fees}
+                          onChange={(e) => patchCert(cert.cert_type, { services_fees: e.target.value })} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">GBCI / IWBI Fees (€)</Label>
+                        <Input type="number" className="h-8 text-sm" placeholder="e.g. 5,000"
+                          value={cert.gbci_fees}
+                          onChange={(e) => patchCert(cert.cert_type, { gbci_fees: e.target.value })} />
+                      </div>
+                    </div>
+
+                    <RadioGroup
+                      value={cert.quote_mode}
+                      onValueChange={(v) => patchCert(cert.cert_type, {
+                        quote_mode: v as "direct" | "builder",
+                        ...(v === "direct" ? { builder_applied: false } : {}),
+                      })}
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+                    >
+                      <label className={cn(
+                        "flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer transition-colors",
+                        cert.quote_mode === "direct" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                      )}>
+                        <RadioGroupItem value="direct" />
+                        <span className="text-sm font-medium">Direct Input</span>
+                      </label>
+                      <label className={cn(
+                        "flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer transition-colors",
+                        cert.quote_mode === "builder" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                      )}>
+                        <RadioGroupItem value="builder" />
+                        <Calculator className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-medium">FTE & Budget Builder</span>
+                      </label>
+                    </RadioGroup>
+
+                    {cert.quote_mode === "direct" ? (
+                      <div className="space-y-1 max-w-xs">
+                        <Label className="text-xs font-medium">Total Quotation (€) *</Label>
+                        <Input
+                          type="number"
+                          placeholder="e.g. 20,000"
+                          className={cn("h-8 text-sm", errors[`total_${cert.cert_type}`] && "border-destructive")}
+                          value={cert.total_fees}
+                          onChange={(e) => patchCert(cert.cert_type, { total_fees: e.target.value })}
+                        />
+                        {errors[`total_${cert.cert_type}`] && (
+                          <p className="text-xs text-destructive">{errors[`total_${cert.cert_type}`]}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        {cert.builder_applied && cert.total_fees && (
+                          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm">
+                            <span className="font-medium text-emerald-800">Applied: €{Number(cert.total_fees).toLocaleString()}</span>
+                            <span className="text-emerald-700 ml-2 text-xs">— recompute and click "Use this value" again to update.</span>
+                          </div>
+                        )}
+                        <QuotationBudgetBuilder
+                          state={cert.builder}
+                          onChange={(b) => patchCert(cert.cert_type, { builder: b })}
+                          hasIaq={cert.flags.iaq}
+                          hasEnergy={cert.flags.energy}
+                          onApply={(suggested, gbciFees) => {
+                            patchCert(cert.cert_type, {
+                              total_fees: String(suggested),
+                              gbci_fees: gbciFees > 0 ? String(gbciFees) : cert.gbci_fees,
+                              builder_applied: true,
+                            });
+                          }}
+                        />
+                        {errors[`total_${cert.cert_type}`] && (
+                          <p className="text-xs text-destructive">{errors[`total_${cert.cert_type}`]}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             );
@@ -651,20 +763,12 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
         <p className="text-sm text-muted-foreground mt-0.5">Fill in the commercial information. All fields are optional at this stage.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label className="text-xs font-medium">Area (sqm)</Label>
           <Input type="number" placeholder="e.g. 1500" value={services.sqm} onChange={(e) => setServices((s) => ({ ...s, sqm: e.target.value }))} />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium">Services Fees (€)</Label>
-          <Input type="number" placeholder="e.g. 15,000" value={services.servicesFees} onChange={(e) => setServices((s) => ({ ...s, servicesFees: e.target.value }))} />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs font-medium">GBCI Fees (€)</Label>
-          <Input type="number" placeholder="e.g. 5,000" value={services.gbciFees} onChange={(e) => setServices((s) => ({ ...s, gbciFees: e.target.value }))} />
-        </div>
-        <div className="space-y-1.5 sm:col-span-2">
           <Label className="text-xs font-medium">Quotation sent date</Label>
           <Popover>
             <PopoverTrigger asChild>
@@ -679,84 +783,6 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
           </Popover>
         </div>
       </div>
-
-      {/* Quotation Value: Direct Input vs FTE & Budget Builder */}
-      <Card className="border-primary/20">
-        <CardContent className="pt-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold">Quotation Value</p>
-              <p className="text-xs text-muted-foreground">Type the total directly, or build it from effort, costs and markup.</p>
-            </div>
-          </div>
-
-          <RadioGroup
-            value={quoteMode}
-            onValueChange={(v) => {
-              setQuoteMode(v as "direct" | "builder");
-              if (v === "direct") setBuilderApplied(false);
-            }}
-            className="grid grid-cols-1 sm:grid-cols-2 gap-2"
-          >
-            <label className={cn(
-              "flex items-center gap-2 rounded-lg border p-3 cursor-pointer transition-colors",
-              quoteMode === "direct" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
-            )}>
-              <RadioGroupItem value="direct" />
-              <span className="text-sm font-medium">Direct Input</span>
-            </label>
-            <label className={cn(
-              "flex items-center gap-2 rounded-lg border p-3 cursor-pointer transition-colors",
-              quoteMode === "builder" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
-            )}>
-              <RadioGroupItem value="builder" />
-              <Calculator className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">FTE & Budget Builder</span>
-            </label>
-          </RadioGroup>
-
-          {quoteMode === "direct" ? (
-            <div className="space-y-1.5 max-w-xs">
-              <Label className="text-xs font-medium">Total Quotation (€)</Label>
-              <Input
-                type="number"
-                placeholder="e.g. 20,000"
-                value={services.totalFees}
-                onChange={(e) => setServices((s) => ({ ...s, totalFees: e.target.value }))}
-              />
-            </div>
-          ) : (
-            <>
-              {builderApplied && services.totalFees && (
-                <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm">
-                  <span className="font-medium text-emerald-800">Applied: €{Number(services.totalFees).toLocaleString()}</span>
-                  <span className="text-emerald-700 ml-2 text-xs">— recompute and click "Use this value" again to update.</span>
-                </div>
-              )}
-              {(() => {
-                const aggIaq = services.certifications.some((c) => c.flags.iaq);
-                const aggEnergy = services.certifications.some((c) => c.flags.energy);
-                return (
-                  <QuotationBudgetBuilder
-                    state={builder}
-                    onChange={setBuilder}
-                    hasIaq={aggIaq}
-                    hasEnergy={aggEnergy}
-                    onApply={(suggested, gbciFees) => {
-                      setServices((s) => ({
-                        ...s,
-                        totalFees: String(suggested),
-                        gbciFees: gbciFees > 0 ? String(gbciFees) : s.gbciFees,
-                      }));
-                      setBuilderApplied(true);
-                    }}
-                  />
-                );
-              })()}
-            </>
-          )}
-        </CardContent>
-      </Card>
 
       <div className="space-y-1.5">
         <Label className="text-xs font-medium">Commercial notes</Label>
@@ -841,17 +867,26 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
         </CardContent>
       </Card>
 
-      {/* Quotation */}
-      {(services.totalFees || services.servicesFees || services.gbciFees || services.quotationSentDate || services.notes) && (
+      {/* Quotation per certification */}
+      {services.certifications.length > 0 && (
         <Card className="border-blue-200 bg-blue-50/30">
-          <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Quotation</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
-              {services.servicesFees && <div><p className="text-muted-foreground text-xs">Services fees</p><p className="font-medium">€{Number(services.servicesFees).toLocaleString()}</p></div>}
-              {services.gbciFees && <div><p className="text-muted-foreground text-xs">GBCI fees</p><p className="font-medium">€{Number(services.gbciFees).toLocaleString()}</p></div>}
-              {services.totalFees && <div><p className="text-muted-foreground text-xs">Total fees</p><p className="font-semibold text-foreground">€{Number(services.totalFees).toLocaleString()}</p></div>}
-              {services.quotationSentDate && <div><p className="text-muted-foreground text-xs">Sent on</p><p className="font-medium">{format(services.quotationSentDate, "dd MMM yyyy")}</p></div>}
-              {services.sqm && <div><p className="text-muted-foreground text-xs">Area</p><p className="font-medium">{services.sqm} sqm</p></div>}
+          <CardContent className="pt-4 pb-3 space-y-3">
+            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Quotation</p>
+            {services.sqm && <p className="text-xs text-muted-foreground">Area: <span className="font-medium text-foreground">{services.sqm} sqm</span>{services.quotationSentDate && <> · Sent on <span className="font-medium text-foreground">{format(services.quotationSentDate, "dd MMM yyyy")}</span></>}</p>}
+            <div className="space-y-2">
+              {services.certifications.map((c) => (
+                <div key={c.cert_type} className="rounded-md border bg-background/60 p-2.5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="secondary" className="font-bold">{c.cert_type}</Badge>
+                    <span className="text-[11px] text-muted-foreground">{c.quote_mode === "builder" ? "Builder" : "Direct"}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div><p className="text-muted-foreground">Services</p><p className="font-medium">{c.services_fees ? `€${Number(c.services_fees).toLocaleString()}` : "—"}</p></div>
+                    <div><p className="text-muted-foreground">GBCI</p><p className="font-medium">{c.gbci_fees ? `€${Number(c.gbci_fees).toLocaleString()}` : "—"}</p></div>
+                    <div><p className="text-muted-foreground">Total</p><p className="font-semibold text-foreground">{c.total_fees ? `€${Number(c.total_fees).toLocaleString()}` : "—"}</p></div>
+                  </div>
+                </div>
+              ))}
             </div>
             {services.notes && <p className="text-xs text-muted-foreground mt-2 italic">"{services.notes}"</p>}
           </CardContent>
