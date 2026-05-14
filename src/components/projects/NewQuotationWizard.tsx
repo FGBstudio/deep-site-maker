@@ -271,40 +271,64 @@ export function NewQuotationWizard({ open, onOpenChange, onSaved }: Props) {
 
       const handoverStr = format(services.handoverDate!, "yyyy-MM-dd");
 
+      // Compute builder snapshot once (when builder mode is used).
+      const useBuilder = quoteMode === "builder" && builderApplied;
+      const builderComputation = useBuilder ? computeBudget(builder) : null;
+      const allocatedHours = builderComputation
+        ? Math.round(builderComputation.effort_days * HOURS_PER_DAY * 100) / 100
+        : null;
+
       // 2. Insert one certification row per selected service
       for (const cert of services.certifications) {
         const name = services.certifications.length > 1
           ? `${services.projectName} – ${cert.cert_type}`
           : services.projectName;
 
-        await supabase.from("certifications").insert({
-          name,
-          client: services.client,
-          region: services.region,
-          handover_date: handoverStr,
-          status: "quotation",
-          pm_id: null,
-          site_id: resolvedSiteId,
-          cert_type: cert.cert_type,
-          cert_rating: cert.cert_rating || null,
-          cert_level: cert.cert_level || null,
-          project_subtype: cert.project_subtype || null,
-          level: cert.cert_rating || null,
-          score: 0,
-          sqm: services.sqm ? Number(services.sqm) : null,
-          fgb_monitor: cert.flags.energy, // legacy mirror
-          has_iaq_monitoring: cert.flags.iaq,
-          has_energy_monitoring: cert.flags.energy,
-          has_water_monitoring: cert.flags.water,
-          has_hardware_redirection: cert.flags.hardwareRedirect,
-          services_fees: services.servicesFees ? Number(services.servicesFees) : null,
-          gbci_fees: services.gbciFees ? Number(services.gbciFees) : null,
-          total_fees: services.totalFees ? Number(services.totalFees) : null,
-          quotation_sent_date: services.quotationSentDate
-            ? format(services.quotationSentDate, "yyyy-MM-dd")
-            : null,
-          quotation_notes: services.notes || null,
-        } as any);
+        const { data: insertedCert, error: certErr } = await supabase
+          .from("certifications")
+          .insert({
+            name,
+            client: services.client,
+            region: services.region,
+            handover_date: handoverStr,
+            status: "quotation",
+            pm_id: null,
+            site_id: resolvedSiteId,
+            cert_type: cert.cert_type,
+            cert_rating: cert.cert_rating || null,
+            cert_level: cert.cert_level || null,
+            project_subtype: cert.project_subtype || null,
+            level: cert.cert_rating || null,
+            score: 0,
+            sqm: services.sqm ? Number(services.sqm) : null,
+            fgb_monitor: cert.flags.energy, // legacy mirror
+            has_iaq_monitoring: cert.flags.iaq,
+            has_energy_monitoring: cert.flags.energy,
+            has_water_monitoring: cert.flags.water,
+            has_hardware_redirection: cert.flags.hardwareRedirect,
+            services_fees: services.servicesFees ? Number(services.servicesFees) : null,
+            gbci_fees: services.gbciFees ? Number(services.gbciFees) : null,
+            total_fees: services.totalFees ? Number(services.totalFees) : null,
+            allocated_hours: allocatedHours,
+            quotation_sent_date: services.quotationSentDate
+              ? format(services.quotationSentDate, "yyyy-MM-dd")
+              : null,
+            quotation_notes: services.notes || null,
+          } as any)
+          .select("id")
+          .single();
+        if (certErr) throw certErr;
+
+        if (useBuilder && builderComputation && insertedCert) {
+          await supabase.from("quotation_budget_history" as never).insert({
+            certification_id: insertedCert.id,
+            total_suggested: builderComputation.suggested_total,
+            total_cost: builderComputation.total_cost,
+            total_effort_days: builderComputation.effort_days,
+            markup_pct: builder.markup_pct,
+            breakdown: { state: builder, computation: builderComputation } as never,
+          } as never);
+        }
       }
 
       toast({ title: "Quotation saved", description: `${services.projectName} added to the Quotation pipeline.` });
