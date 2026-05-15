@@ -483,6 +483,41 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
                 </FormItem>
               )} />
 
+              {/* Hourly Budget */}
+              <FormField control={form.control} name="allocated_hours" render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>Hourly Budget (h)</FormLabel>
+                    {suggestedHours != null && (
+                      <button
+                        type="button"
+                        onClick={() => form.setValue("allocated_hours", suggestedHours)}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Use FTE Builder suggestion: {suggestedHours}h
+                      </button>
+                    )}
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.5"
+                      placeholder="e.g. 240"
+                      value={field.value ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        field.onChange(v === "" ? undefined : Number(v));
+                      }}
+                    />
+                  </FormControl>
+                  <FormDescription className="text-xs">
+                    Total hours allocated to this certification. Feeds Project Burn Rate / Hours Analytics.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
               {/* Site coordinates */}
               <div className="space-y-2">
                 <p className="text-sm font-medium">Site Coordinates <span className="text-muted-foreground font-normal">(optional)</span></p>
