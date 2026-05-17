@@ -13,7 +13,10 @@ export type TaskAlertType =
   | "monitoring_iaq_requested"
   | "monitoring_energy_requested"
   | "monitoring_water_requested"
-  | "monitoring_energy_ready_to_assign";
+  | "monitoring_energy_ready_to_assign"
+  | "budget_warning_80"
+  | "budget_overrun"
+  | "resource_burnout_warning";
 
 export interface TaskAlert {
   id: string;
