@@ -146,6 +146,9 @@ export function useTaskAlertCounts(role: AppRole | null, userId: string | undefi
       monitoring_energy_requested: 0,
       monitoring_water_requested: 0,
       monitoring_energy_ready_to_assign: 0,
+      budget_warning_80: 0,
+      budget_overrun: 0,
+      resource_burnout_warning: 0,
     }
   );
 
