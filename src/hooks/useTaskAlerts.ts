@@ -49,6 +49,9 @@ const ALERT_TYPE_LABELS: Record<TaskAlertType, string> = {
   monitoring_energy_requested: "Energy Monitoring Requested",
   monitoring_water_requested: "Water Monitoring Requested",
   monitoring_energy_ready_to_assign: "Energy Ready to Assign",
+  budget_warning_80: "Budget Warning 80%",
+  budget_overrun: "Budget Overrun",
+  resource_burnout_warning: "Resource Burnout",
 };
 
 const ALERT_TYPE_COLORS: Record<TaskAlertType, string> = {
@@ -63,6 +66,9 @@ const ALERT_TYPE_COLORS: Record<TaskAlertType, string> = {
   monitoring_energy_requested: "bg-warning/10 text-warning border-warning/20",
   monitoring_water_requested: "bg-primary/10 text-primary border-primary/20",
   monitoring_energy_ready_to_assign: "bg-success/10 text-success border-success/30",
+  budget_warning_80: "bg-warning/10 text-warning border-warning/30",
+  budget_overrun: "bg-destructive/10 text-destructive border-destructive/30",
+  resource_burnout_warning: "bg-destructive/10 text-destructive border-destructive/30",
 };
 
 export { ALERT_TYPE_LABELS, ALERT_TYPE_COLORS };
