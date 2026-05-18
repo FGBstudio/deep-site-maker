@@ -131,9 +131,11 @@ export default function TeamBoard() {
 
   const { data: members = [] } = useTeamMembers(effectiveTeamId);
   const { data: sprints = [] } = useTeamSprints(effectiveTeamId);
+  // auto-select the most recent sprint (sprints arrive sorted desc by start_date)
+  const effectiveSprintId = selectedSprintId ?? sprints[0]?.id;
   const { data: tasks = [], isLoading: tasksLoading } = useTeamTasks(
     effectiveTeamId,
-    selectedSprintId
+    effectiveSprintId
   );
   const { data: users = [] } = useAllUsers();
   const { data: certifications = [] } = useCertificationOptions();
@@ -147,7 +149,7 @@ export default function TeamBoard() {
   const deleteTask = useDeleteTeamTask(effectiveTeamId);
 
   const currentTeam = teams.find((t) => t.id === effectiveTeamId);
-  const currentSprint = sprints.find((s) => s.id === selectedSprintId);
+  const currentSprint = sprints.find((s) => s.id === effectiveSprintId);
 
   // Filtered tasks
   const filteredTasks = useMemo(() => {
@@ -191,7 +193,7 @@ export default function TeamBoard() {
     createTask.mutate(
       {
         team_id: effectiveTeamId,
-        sprint_id: selectedSprintId ?? null,
+        sprint_id: effectiveSprintId ?? null,
         certification_id,
         assigned_to,
         title: parsed.title,
@@ -257,14 +259,16 @@ export default function TeamBoard() {
 
         <div className="h-6 w-px bg-border mx-1" />
 
-        <Select value={selectedSprintId ?? "all"} onValueChange={(v) => setSelectedSprintId(v === "all" ? undefined : v)}>
+        <Select value={effectiveSprintId ?? "all"} onValueChange={(v) => setSelectedSprintId(v === "all" ? undefined : v)}>
           <SelectTrigger className="w-[240px]">
             <SelectValue placeholder="Sprint" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All sprints</SelectItem>
             {sprints.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+              <SelectItem key={s.id} value={s.id}>
+                {s.label}{s.meeting_notes ? " · 📝" : ""}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -297,6 +301,22 @@ export default function TeamBoard() {
             <Button size="sm" variant="outline" onClick={() => setShowNewSprint(true)}>
               Create sprint
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Active sprint meeting notes preview */}
+      {currentSprint?.meeting_notes && (
+        <Card className="mb-4 bg-muted/30">
+          <CardContent className="py-3 px-4 flex items-start gap-3">
+            <StickyNote className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                Meeting notes · {currentSprint.label}
+              </p>
+              <p className="text-sm whitespace-pre-wrap line-clamp-4">{currentSprint.meeting_notes}</p>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setShowNotes(true)}>Edit</Button>
           </CardContent>
         </Card>
       )}
