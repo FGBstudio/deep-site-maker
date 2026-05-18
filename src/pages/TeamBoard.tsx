@@ -259,14 +259,16 @@ export default function TeamBoard() {
 
         <div className="h-6 w-px bg-border mx-1" />
 
-        <Select value={selectedSprintId ?? "all"} onValueChange={(v) => setSelectedSprintId(v === "all" ? undefined : v)}>
+        <Select value={effectiveSprintId ?? "all"} onValueChange={(v) => setSelectedSprintId(v === "all" ? undefined : v)}>
           <SelectTrigger className="w-[240px]">
             <SelectValue placeholder="Sprint" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All sprints</SelectItem>
             {sprints.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+              <SelectItem key={s.id} value={s.id}>
+                {s.label}{s.meeting_notes ? " · 📝" : ""}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
