@@ -149,7 +149,7 @@ export default function TeamBoard() {
   const deleteTask = useDeleteTeamTask(effectiveTeamId);
 
   const currentTeam = teams.find((t) => t.id === effectiveTeamId);
-  const currentSprint = sprints.find((s) => s.id === selectedSprintId);
+  const currentSprint = sprints.find((s) => s.id === effectiveSprintId);
 
   // Filtered tasks
   const filteredTasks = useMemo(() => {
