@@ -261,7 +261,7 @@ export default function TeamBoard() {
 
         <div className="h-6 w-px bg-border mx-1" />
 
-        <Select value={effectiveSprintId ?? "all"} onValueChange={(v) => setSelectedSprintId(v === "all" ? undefined : v)}>
+        <Select value={effectiveSprintId ?? "all"} onValueChange={(v) => setSelectedSprintId(v === "all" ? null : v)}>
           <SelectTrigger className="w-[240px]">
             <SelectValue placeholder="Sprint" />
           </SelectTrigger>
