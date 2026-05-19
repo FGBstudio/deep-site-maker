@@ -3616,6 +3616,8 @@ export type Database = {
           air_co_warning_ppm: number | null
           air_co2_critical_ppm: number | null
           air_co2_warning_ppm: number | null
+          air_hcho_critical_ugm3: number | null
+          air_hcho_warning_ugm3: number | null
           air_humidity_max_pct: number | null
           air_humidity_min_pct: number | null
           air_o3_critical_ppb: number | null
@@ -3626,6 +3628,8 @@ export type Database = {
           air_pm25_warning_ugm3: number | null
           air_temp_max_c: number | null
           air_temp_min_c: number | null
+          air_tvoc_critical_ugm3: number | null
+          air_tvoc_warning_ugm3: number | null
           air_voc_critical_ppb: number | null
           air_voc_warning_ppb: number | null
           connectivity_offline_threshold_energy_min: number | null
@@ -3648,6 +3652,8 @@ export type Database = {
           air_co_warning_ppm?: number | null
           air_co2_critical_ppm?: number | null
           air_co2_warning_ppm?: number | null
+          air_hcho_critical_ugm3?: number | null
+          air_hcho_warning_ugm3?: number | null
           air_humidity_max_pct?: number | null
           air_humidity_min_pct?: number | null
           air_o3_critical_ppb?: number | null
@@ -3658,6 +3664,8 @@ export type Database = {
           air_pm25_warning_ugm3?: number | null
           air_temp_max_c?: number | null
           air_temp_min_c?: number | null
+          air_tvoc_critical_ugm3?: number | null
+          air_tvoc_warning_ugm3?: number | null
           air_voc_critical_ppb?: number | null
           air_voc_warning_ppb?: number | null
           connectivity_offline_threshold_energy_min?: number | null
@@ -3680,6 +3688,8 @@ export type Database = {
           air_co_warning_ppm?: number | null
           air_co2_critical_ppm?: number | null
           air_co2_warning_ppm?: number | null
+          air_hcho_critical_ugm3?: number | null
+          air_hcho_warning_ugm3?: number | null
           air_humidity_max_pct?: number | null
           air_humidity_min_pct?: number | null
           air_o3_critical_ppb?: number | null
@@ -3690,6 +3700,8 @@ export type Database = {
           air_pm25_warning_ugm3?: number | null
           air_temp_max_c?: number | null
           air_temp_min_c?: number | null
+          air_tvoc_critical_ugm3?: number | null
+          air_tvoc_warning_ugm3?: number | null
           air_voc_critical_ppb?: number | null
           air_voc_warning_ppb?: number | null
           connectivity_offline_threshold_energy_min?: number | null
