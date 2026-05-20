@@ -343,7 +343,7 @@ export function useMyGeneralTasks() {
       const { data, error } = await sb
         .from("project_tasks")
         .select("*, teams:team_id(id, name, color), team_sprints:sprint_id(id, label)")
-        .eq("assigned_to", user.id)
+        .or(`assigned_to.eq.${user.id},assignees.cs.{${user.id}}`)
         .is("certification_id", null)
         .order("due_date", { ascending: true, nullsFirst: false })
         .limit(200);
