@@ -804,11 +804,28 @@ function EditTaskDialog({
 }) {
   const [title, setTitle] = useState(task.title || task.task_name);
   const [description, setDescription] = useState(task.description ?? "");
-  const [assignee, setAssignee] = useState(task.assigned_to ?? "unassigned");
+  const initialAssignees =
+    task.assignees && task.assignees.length > 0
+      ? task.assignees
+      : task.assigned_to
+      ? [task.assigned_to]
+      : [];
+  const [assignees, setAssignees] = useState<string[]>(initialAssignees);
   const [project, setProject] = useState(task.certification_id ?? "general");
   const [priority, setPriority] = useState<string>(task.priority ?? "none");
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
   const [status, setStatus] = useState<TeamTaskStatus>(task.status);
+
+  const memberById = new Map((members || []).map((m) => [m.user_id, m] as const));
+  const toggleAssignee = (id: string, checked: boolean) =>
+    setAssignees((prev) => (checked ? Array.from(new Set([...prev, id])) : prev.filter((v) => v !== id)));
+
+  const assigneeLabel =
+    assignees.length === 0
+      ? "Unassigned"
+      : assignees.length === 1
+      ? (memberById.get(assignees[0])?.profile?.full_name || memberById.get(assignees[0])?.profile?.email || "1 person")
+      : `${assignees.length} people`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -827,18 +844,48 @@ function EditTaskDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Assignee</Label>
-              <Select value={assignee} onValueChange={setAssignee}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {(members || []).map((m) => (
-                    <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.profile?.full_name || m.profile?.email || "User"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Assignees</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between font-normal">
+                    <span className="truncate">{assigneeLabel}</span>
+                    <Users className="h-3.5 w-3.5 opacity-60" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-2" align="start">
+                  <div className="max-h-64 overflow-auto space-y-1">
+                    {(members || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground px-2 py-1">No team members yet</p>
+                    )}
+                    {(members || []).map((m) => {
+                      const checked = assignees.includes(m.user_id);
+                      const name = m.profile?.full_name || m.profile?.email || "User";
+                      return (
+                        <label
+                          key={m.user_id}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/60 cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => toggleAssignee(m.user_id, !!v)}
+                          />
+                          <span className="text-sm truncate">{name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {assignees.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full mt-1 h-7 text-xs"
+                      onClick={() => setAssignees([])}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </PopoverContent>
+              </Popover>
             </div>
             <div>
               <Label>Project</Label>
