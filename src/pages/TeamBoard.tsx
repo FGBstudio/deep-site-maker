@@ -163,7 +163,10 @@ export default function TeamBoard() {
   // Filtered tasks
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
-      if (filterAssignee !== "all" && t.assigned_to !== filterAssignee) return false;
+      if (filterAssignee !== "all") {
+        const ids = (t.assignees && t.assignees.length > 0) ? t.assignees : (t.assigned_to ? [t.assigned_to] : []);
+        if (!ids.includes(filterAssignee)) return false;
+      }
       if (filterProject === "general" && t.certification_id) return false;
       if (filterProject !== "all" && filterProject !== "general" && t.certification_id !== filterProject) return false;
       return true;
