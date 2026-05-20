@@ -28,6 +28,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -161,7 +163,10 @@ export default function TeamBoard() {
   // Filtered tasks
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
-      if (filterAssignee !== "all" && t.assigned_to !== filterAssignee) return false;
+      if (filterAssignee !== "all") {
+        const ids = (t.assignees && t.assignees.length > 0) ? t.assignees : (t.assigned_to ? [t.assigned_to] : []);
+        if (!ids.includes(filterAssignee)) return false;
+      }
       if (filterProject === "general" && t.certification_id) return false;
       if (filterProject !== "all" && filterProject !== "general" && t.certification_id !== filterProject) return false;
       return true;
@@ -565,13 +570,30 @@ function TaskCard({
               </span>
             )}
           </div>
-          {task.assignee && (
-            <Avatar className="h-5 w-5">
-              <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
-                {initials(task.assignee.full_name || task.assignee.email)}
-              </AvatarFallback>
-            </Avatar>
-          )}
+          {(() => {
+            const people = task.assignee_profiles && task.assignee_profiles.length > 0
+              ? task.assignee_profiles
+              : task.assignee ? [task.assignee] : [];
+            if (people.length === 0) return null;
+            const shown = people.slice(0, 3);
+            const extra = people.length - shown.length;
+            return (
+              <div className="flex -space-x-1.5">
+                {shown.map((p) => (
+                  <Avatar key={p.id} className="h-5 w-5 ring-2 ring-background">
+                    <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+                      {initials(p.full_name || p.email)}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+                {extra > 0 && (
+                  <div className="h-5 w-5 rounded-full bg-muted text-[9px] text-muted-foreground flex items-center justify-center ring-2 ring-background">
+                    +{extra}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </CardContent>
     </Card>
@@ -782,11 +804,28 @@ function EditTaskDialog({
 }) {
   const [title, setTitle] = useState(task.title || task.task_name);
   const [description, setDescription] = useState(task.description ?? "");
-  const [assignee, setAssignee] = useState(task.assigned_to ?? "unassigned");
+  const initialAssignees =
+    task.assignees && task.assignees.length > 0
+      ? task.assignees
+      : task.assigned_to
+      ? [task.assigned_to]
+      : [];
+  const [assignees, setAssignees] = useState<string[]>(initialAssignees);
   const [project, setProject] = useState(task.certification_id ?? "general");
   const [priority, setPriority] = useState<string>(task.priority ?? "none");
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
   const [status, setStatus] = useState<TeamTaskStatus>(task.status);
+
+  const memberById = new Map((members || []).map((m) => [m.user_id, m] as const));
+  const toggleAssignee = (id: string, checked: boolean) =>
+    setAssignees((prev) => (checked ? Array.from(new Set([...prev, id])) : prev.filter((v) => v !== id)));
+
+  const assigneeLabel =
+    assignees.length === 0
+      ? "Unassigned"
+      : assignees.length === 1
+      ? (memberById.get(assignees[0])?.profile?.full_name || memberById.get(assignees[0])?.profile?.email || "1 person")
+      : `${assignees.length} people`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -805,18 +844,48 @@ function EditTaskDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Assignee</Label>
-              <Select value={assignee} onValueChange={setAssignee}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {(members || []).map((m) => (
-                    <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.profile?.full_name || m.profile?.email || "User"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Assignees</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between font-normal">
+                    <span className="truncate">{assigneeLabel}</span>
+                    <Users className="h-3.5 w-3.5 opacity-60" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-2" align="start">
+                  <div className="max-h-64 overflow-auto space-y-1">
+                    {(members || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground px-2 py-1">No team members yet</p>
+                    )}
+                    {(members || []).map((m) => {
+                      const checked = assignees.includes(m.user_id);
+                      const name = m.profile?.full_name || m.profile?.email || "User";
+                      return (
+                        <label
+                          key={m.user_id}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/60 cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => toggleAssignee(m.user_id, !!v)}
+                          />
+                          <span className="text-sm truncate">{name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {assignees.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full mt-1 h-7 text-xs"
+                      onClick={() => setAssignees([])}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </PopoverContent>
+              </Popover>
             </div>
             <div>
               <Label>Project</Label>
@@ -871,7 +940,8 @@ function EditTaskDialog({
                   title,
                   task_name: title,
                   description,
-                  assigned_to: assignee === "unassigned" ? null : assignee,
+                  assigned_to: assignees[0] ?? null,
+                  assignees,
                   certification_id: project === "general" ? null : project,
                   task_kind: project === "general" ? "general" : "project",
                   priority: priority === "none" ? null : (priority as TeamTaskPriority),

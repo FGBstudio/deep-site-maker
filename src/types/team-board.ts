@@ -51,6 +51,7 @@ export interface TeamTask {
   team_id: string | null;
   sprint_id: string | null;
   assigned_to: string | null;
+  assignees: string[];
   task_name: string;
   title: string | null;
   description: string | null;
@@ -66,4 +67,5 @@ export interface TeamTask {
   team?: { id: string; name: string; color: string } | null;
   sprint?: { id: string; label: string } | null;
   assignee?: { id: string; display_name: string | null; full_name: string | null; email: string | null } | null;
+  assignee_profiles?: Array<{ id: string; display_name: string | null; full_name: string | null; email: string | null }>;
 }

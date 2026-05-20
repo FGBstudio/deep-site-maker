@@ -95,9 +95,14 @@ export function useTeamTasks(teamId: string | undefined, sprintId?: string | nul
         team_sprints?: TeamTask["sprint"];
       }>;
 
-      // assignees
+      // assignees (union of primary + array)
       const assigneeIds = [
-        ...new Set(rows.map((r) => r.assigned_to).filter((v): v is string => !!v)),
+        ...new Set(
+          rows.flatMap((r) => {
+            const ids = Array.isArray(r.assignees) ? r.assignees : [];
+            return [...ids, r.assigned_to].filter((v): v is string => !!v);
+          })
+        ),
       ];
       const assigneeMap = new Map<string, NonNullable<TeamTask["assignee"]>>();
       if (assigneeIds.length) {
@@ -110,14 +115,21 @@ export function useTeamTasks(teamId: string | undefined, sprintId?: string | nul
         }
       }
 
-      return rows.map<TeamTask>((r) => ({
-        ...r,
-        title: r.title ?? r.task_name ?? "",
-        certification: r.certifications ?? null,
-        team: r.teams ?? null,
-        sprint: r.team_sprints ?? null,
-        assignee: r.assigned_to ? assigneeMap.get(r.assigned_to) ?? null : null,
-      }));
+      return rows.map<TeamTask>((r) => {
+        const ids = Array.isArray(r.assignees) ? r.assignees : [];
+        return {
+          ...r,
+          assignees: ids,
+          title: r.title ?? r.task_name ?? "",
+          certification: r.certifications ?? null,
+          team: r.teams ?? null,
+          sprint: r.team_sprints ?? null,
+          assignee: r.assigned_to ? assigneeMap.get(r.assigned_to) ?? null : null,
+          assignee_profiles: ids
+            .map((id) => assigneeMap.get(id))
+            .filter((p): p is NonNullable<TeamTask["assignee"]> => !!p),
+        };
+      });
     },
     enabled: !!teamId,
   });
@@ -227,6 +239,7 @@ export interface CreateTeamTaskInput {
   sprint_id?: string | null;
   certification_id?: string | null;
   assigned_to?: string | null;
+  assignees?: string[];
   title: string;
   description?: string | null;
   priority?: TeamTaskPriority | null;
@@ -240,13 +253,21 @@ export function useCreateTeamTask() {
   return useMutation({
     mutationFn: async (input: CreateTeamTaskInput) => {
       const kind: TeamTaskKind = input.certification_id ? "project" : "general";
+      const assignees =
+        input.assignees && input.assignees.length > 0
+          ? Array.from(new Set(input.assignees))
+          : input.assigned_to
+          ? [input.assigned_to]
+          : [];
+      const primary = assignees[0] ?? input.assigned_to ?? null;
       const { data, error } = await sb
         .from("project_tasks")
         .insert({
           team_id: input.team_id,
           sprint_id: input.sprint_id ?? null,
           certification_id: input.certification_id ?? null,
-          assigned_to: input.assigned_to ?? null,
+          assigned_to: primary,
+          assignees,
           task_name: input.title,
           title: input.title,
           description: input.description ?? null,
@@ -278,7 +299,14 @@ export function useUpdateTeamTask(teamId: string | undefined) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<TeamTask> & { id: string }) => {
-      const { error } = await sb.from("project_tasks").update(updates).eq("id", id);
+      const payload: Record<string, unknown> = { ...updates };
+      // Keep primary assigned_to in sync when assignees array is provided
+      if (Array.isArray(updates.assignees)) {
+        const ids = Array.from(new Set(updates.assignees));
+        payload.assignees = ids;
+        payload.assigned_to = ids[0] ?? null;
+      }
+      const { error } = await sb.from("project_tasks").update(payload).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -315,7 +343,7 @@ export function useMyGeneralTasks() {
       const { data, error } = await sb
         .from("project_tasks")
         .select("*, teams:team_id(id, name, color), team_sprints:sprint_id(id, label)")
-        .eq("assigned_to", user.id)
+        .or(`assigned_to.eq.${user.id},assignees.cs.{${user.id}}`)
         .is("certification_id", null)
         .order("due_date", { ascending: true, nullsFirst: false })
         .limit(200);

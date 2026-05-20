@@ -2648,6 +2648,7 @@ export type Database = {
       project_tasks: {
         Row: {
           assigned_to: string | null
+          assignees: string[]
           blocking_payment_id: string | null
           certification_id: string | null
           created_at: string
@@ -2667,6 +2668,7 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          assignees?: string[]
           blocking_payment_id?: string | null
           certification_id?: string | null
           created_at?: string
@@ -2686,6 +2688,7 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          assignees?: string[]
           blocking_payment_id?: string | null
           certification_id?: string | null
           created_at?: string
