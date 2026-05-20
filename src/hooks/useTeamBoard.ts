@@ -239,6 +239,7 @@ export interface CreateTeamTaskInput {
   sprint_id?: string | null;
   certification_id?: string | null;
   assigned_to?: string | null;
+  assignees?: string[];
   title: string;
   description?: string | null;
   priority?: TeamTaskPriority | null;
@@ -252,13 +253,21 @@ export function useCreateTeamTask() {
   return useMutation({
     mutationFn: async (input: CreateTeamTaskInput) => {
       const kind: TeamTaskKind = input.certification_id ? "project" : "general";
+      const assignees =
+        input.assignees && input.assignees.length > 0
+          ? Array.from(new Set(input.assignees))
+          : input.assigned_to
+          ? [input.assigned_to]
+          : [];
+      const primary = assignees[0] ?? input.assigned_to ?? null;
       const { data, error } = await sb
         .from("project_tasks")
         .insert({
           team_id: input.team_id,
           sprint_id: input.sprint_id ?? null,
           certification_id: input.certification_id ?? null,
-          assigned_to: input.assigned_to ?? null,
+          assigned_to: primary,
+          assignees,
           task_name: input.title,
           title: input.title,
           description: input.description ?? null,
