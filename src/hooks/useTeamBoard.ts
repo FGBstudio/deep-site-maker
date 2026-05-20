@@ -299,7 +299,14 @@ export function useUpdateTeamTask(teamId: string | undefined) {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<TeamTask> & { id: string }) => {
-      const { error } = await sb.from("project_tasks").update(updates).eq("id", id);
+      const payload: Record<string, unknown> = { ...updates };
+      // Keep primary assigned_to in sync when assignees array is provided
+      if (Array.isArray(updates.assignees)) {
+        const ids = Array.from(new Set(updates.assignees));
+        payload.assignees = ids;
+        payload.assigned_to = ids[0] ?? null;
+      }
+      const { error } = await sb.from("project_tasks").update(payload).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
