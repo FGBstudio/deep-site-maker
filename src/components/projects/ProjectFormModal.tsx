@@ -62,6 +62,9 @@ const formSchema = z.object({
     cert_level: z.string().optional(),
     project_subtype: z.string().optional(),
     pm_id: z.string().optional(),
+    allocated_hours: z.number().nonnegative().optional().nullable(),
+    has_iaq_monitoring: z.boolean().optional(),
+    has_energy_monitoring: z.boolean().optional(),
   })).default([]),
   // Quotation fields
   sqm: z.number().optional(),
