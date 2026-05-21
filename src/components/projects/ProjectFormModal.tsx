@@ -26,6 +26,10 @@ import { format } from "date-fns";
 import { RATING_SYSTEMS, RATING_SUBTYPES, type RatingSystem } from "@/data/ratingSubtypes";
 import { getCertificationTemplate } from "@/data/certificationTemplates";
 import type { Product, Project, ProjectAllocation } from "@/types/custom-tables";
+import { QuotationBudgetBuilder, emptyBuilder } from "@/components/projects/QuotationBudgetBuilder";
+import { computeBudget, HOURS_PER_DAY, type BudgetBuilderState } from "@/lib/quotationBudget";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Calculator, ChevronDown } from "lucide-react";
 
 const REGIONS = ["Europe", "America", "APAC", "ME"] as const;
 const PROJECT_STATUSES = ["Design", "Construction", "Completed", "Cancelled"] as const;
@@ -62,6 +66,9 @@ const formSchema = z.object({
     cert_level: z.string().optional(),
     project_subtype: z.string().optional(),
     pm_id: z.string().optional(),
+    allocated_hours: z.number().nonnegative().optional().nullable(),
+    has_iaq_monitoring: z.boolean().optional(),
+    has_energy_monitoring: z.boolean().optional(),
   })).default([]),
   // Quotation fields
   sqm: z.number().optional(),
@@ -101,6 +108,8 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
   const [saving, setSaving] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [suggestedHours, setSuggestedHours] = useState<number | null>(null);
+  const [builderStates, setBuilderStates] = useState<Record<string, BudgetBuilderState>>({});
+  const [builderOpen, setBuilderOpen] = useState<Record<string, boolean>>({});
 
   const [selectedHoldingId, setSelectedHoldingId] = useState<string>("");
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
@@ -212,6 +221,9 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
             cert_rating: c.level || c.cert_rating,
             pm_id: c.pm_id || "",
             project_subtype: c.project_subtype || "",
+            allocated_hours: c.allocated_hours != null ? Number(c.allocated_hours) : null,
+            has_iaq_monitoring: !!c.has_iaq_monitoring,
+            has_energy_monitoring: !!c.has_energy_monitoring,
           }));
 
           const baseName = project.name.includes(" - ") ? project.name.split(" - ")[0] : project.name;
@@ -329,6 +341,7 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
           cert_level: certConf.cert_level || null,
           project_subtype: certConf.project_subtype || null,
           level: certConf.cert_rating || null,
+          allocated_hours: certConf.allocated_hours ?? null,
         };
 
         // Add quotation-specific fields
@@ -384,6 +397,21 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
               }
             }
           }
+        }
+
+        // Persist FTE Builder snapshot if used for this cert
+        const targetCertId = certConf.id || firstCertId;
+        const bState = certConf.id ? builderStates[certConf.id] : undefined;
+        if (targetCertId && bState && bState.effort.length > 0) {
+          const comp = computeBudget(bState);
+          await supabase.from("quotation_budget_history" as never).insert({
+            certification_id: targetCertId,
+            total_suggested: comp.suggested_total,
+            total_cost: comp.total_cost,
+            total_effort_days: comp.effort_days,
+            markup_pct: bState.markup_pct,
+            breakdown: { state: bState, computation: comp } as never,
+          } as never);
         }
       }
 
@@ -805,6 +833,74 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
                               )} />
                             )}
                           </div>
+
+                          {/* Project Burn Rate / Hourly Budget — edit mode only */}
+                          {!isQuotationMode && (() => {
+                            const certKey = field.id;
+                            const bState = builderStates[certKey] ?? emptyBuilder();
+                            const isOpen = !!builderOpen[certKey];
+                            const watchedHours = form.watch(`certifications.${index}.allocated_hours`);
+                            const hasIaq = !!form.watch(`certifications.${index}.has_iaq_monitoring`);
+                            const hasEnergy = !!form.watch(`certifications.${index}.has_energy_monitoring`);
+                            return (
+                              <div className="mt-5 border-t pt-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Calculator className="h-4 w-4 text-primary" />
+                                    <p className="text-sm font-semibold">Project Burn Rate · Hourly Budget</p>
+                                  </div>
+                                  <Collapsible open={isOpen} onOpenChange={(v) => setBuilderOpen((s) => ({ ...s, [certKey]: v }))}>
+                                    <CollapsibleTrigger asChild>
+                                      <Button type="button" variant="outline" size="sm" className="gap-1 h-8">
+                                        <ChevronDown className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")} />
+                                        {isOpen ? "Hide FTE Builder" : "Open FTE Builder"}
+                                      </Button>
+                                    </CollapsibleTrigger>
+                                  </Collapsible>
+                                </div>
+                                <FormField control={form.control} name={`certifications.${index}.allocated_hours`} render={({ field: f }) => (
+                                  <FormItem>
+                                    <FormLabel className="text-xs">Allocated Hours (h)</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        step="0.5"
+                                        placeholder="e.g. 240"
+                                        value={f.value ?? ""}
+                                        onChange={(e) => {
+                                          const v = e.target.value;
+                                          f.onChange(v === "" ? null : Number(v));
+                                        }}
+                                      />
+                                    </FormControl>
+                                    <FormDescription className="text-xs">
+                                      Total hours allocated to this certification. Feeds Project Burn Rate / Hours Analytics.
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )} />
+                                <Collapsible open={isOpen} onOpenChange={(v) => setBuilderOpen((s) => ({ ...s, [certKey]: v }))}>
+                                  <CollapsibleContent className="pt-3">
+                                    <QuotationBudgetBuilder
+                                      state={bState}
+                                      onChange={(s) => setBuilderStates((m) => ({ ...m, [certKey]: s }))}
+                                      hasIaq={hasIaq}
+                                      hasEnergy={hasEnergy}
+                                      onApply={(_suggested, _gbci) => {
+                                        const comp = computeBudget(bState);
+                                        const hours = Math.round(comp.effort_days * HOURS_PER_DAY * 100) / 100;
+                                        form.setValue(`certifications.${index}.allocated_hours`, hours);
+                                      }}
+                                    />
+                                    <p className="mt-2 text-[11px] text-muted-foreground">
+                                      Tip: "Use this value" copies <strong>Effort Days × {HOURS_PER_DAY}h</strong> into the Allocated Hours above and saves a snapshot of the breakdown when you save the project.
+                                    </p>
+                                  </CollapsibleContent>
+                                </Collapsible>
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
