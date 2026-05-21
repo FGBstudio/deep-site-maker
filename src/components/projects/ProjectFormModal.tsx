@@ -833,6 +833,74 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
                               )} />
                             )}
                           </div>
+
+                          {/* Project Burn Rate / Hourly Budget — edit mode only */}
+                          {!isQuotationMode && (() => {
+                            const certKey = field.id;
+                            const bState = builderStates[certKey] ?? emptyBuilder();
+                            const isOpen = !!builderOpen[certKey];
+                            const watchedHours = form.watch(`certifications.${index}.allocated_hours`);
+                            const hasIaq = !!form.watch(`certifications.${index}.has_iaq_monitoring`);
+                            const hasEnergy = !!form.watch(`certifications.${index}.has_energy_monitoring`);
+                            return (
+                              <div className="mt-5 border-t pt-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Calculator className="h-4 w-4 text-primary" />
+                                    <p className="text-sm font-semibold">Project Burn Rate · Hourly Budget</p>
+                                  </div>
+                                  <Collapsible open={isOpen} onOpenChange={(v) => setBuilderOpen((s) => ({ ...s, [certKey]: v }))}>
+                                    <CollapsibleTrigger asChild>
+                                      <Button type="button" variant="outline" size="sm" className="gap-1 h-8">
+                                        <ChevronDown className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")} />
+                                        {isOpen ? "Hide FTE Builder" : "Open FTE Builder"}
+                                      </Button>
+                                    </CollapsibleTrigger>
+                                  </Collapsible>
+                                </div>
+                                <FormField control={form.control} name={`certifications.${index}.allocated_hours`} render={({ field: f }) => (
+                                  <FormItem>
+                                    <FormLabel className="text-xs">Allocated Hours (h)</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        step="0.5"
+                                        placeholder="e.g. 240"
+                                        value={f.value ?? ""}
+                                        onChange={(e) => {
+                                          const v = e.target.value;
+                                          f.onChange(v === "" ? null : Number(v));
+                                        }}
+                                      />
+                                    </FormControl>
+                                    <FormDescription className="text-xs">
+                                      Total hours allocated to this certification. Feeds Project Burn Rate / Hours Analytics.
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )} />
+                                <Collapsible open={isOpen} onOpenChange={(v) => setBuilderOpen((s) => ({ ...s, [certKey]: v }))}>
+                                  <CollapsibleContent className="pt-3">
+                                    <QuotationBudgetBuilder
+                                      state={bState}
+                                      onChange={(s) => setBuilderStates((m) => ({ ...m, [certKey]: s }))}
+                                      hasIaq={hasIaq}
+                                      hasEnergy={hasEnergy}
+                                      onApply={(_suggested, _gbci) => {
+                                        const comp = computeBudget(bState);
+                                        const hours = Math.round(comp.effort_days * HOURS_PER_DAY * 100) / 100;
+                                        form.setValue(`certifications.${index}.allocated_hours`, hours);
+                                      }}
+                                    />
+                                    <p className="mt-2 text-[11px] text-muted-foreground">
+                                      Tip: "Use this value" copies <strong>Effort Days × {HOURS_PER_DAY}h</strong> into the Allocated Hours above and saves a snapshot of the breakdown when you save the project.
+                                    </p>
+                                  </CollapsibleContent>
+                                </Collapsible>
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
