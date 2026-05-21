@@ -341,6 +341,7 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
           cert_level: certConf.cert_level || null,
           project_subtype: certConf.project_subtype || null,
           level: certConf.cert_rating || null,
+          allocated_hours: certConf.allocated_hours ?? null,
         };
 
         // Add quotation-specific fields
