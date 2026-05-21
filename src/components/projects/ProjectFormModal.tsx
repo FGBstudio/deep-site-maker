@@ -215,6 +215,9 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
             cert_rating: c.level || c.cert_rating,
             pm_id: c.pm_id || "",
             project_subtype: c.project_subtype || "",
+            allocated_hours: c.allocated_hours != null ? Number(c.allocated_hours) : null,
+            has_iaq_monitoring: !!c.has_iaq_monitoring,
+            has_energy_monitoring: !!c.has_energy_monitoring,
           }));
 
           const baseName = project.name.includes(" - ") ? project.name.split(" - ")[0] : project.name;
