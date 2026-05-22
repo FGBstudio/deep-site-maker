@@ -13,9 +13,6 @@ import { AlertTriangle, ArrowRight, Bell, Building2, CalendarIcon, CheckCircle2,
 import { PMCalendar } from "@/components/dashboard/PMCalendar";
 import { useFinancialAlerts } from "@/hooks/useFinancialAlerts";
 
-// IMPORT PER I WIDGET GRAFICI (STILE CEO DASHBOARD)
-import { PieChart, Pie, Label, BarChart, Bar, XAxis, YAxis } from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
 type PMProjectView = PMProject & { project_subtype?: string | null };
 
