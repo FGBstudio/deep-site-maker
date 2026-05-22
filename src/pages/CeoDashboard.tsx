@@ -611,7 +611,7 @@ export default function CeoDashboard() {
             </TabsList>
 
             <TabsContent value="resources">
-              <TabRisorse tasks={tasks} projects={projects} />
+              <TabRisorse tasks={[...tasks, ...projectTasks]} projects={projects} />
             </TabsContent>
 
             <TabsContent value="projects">
