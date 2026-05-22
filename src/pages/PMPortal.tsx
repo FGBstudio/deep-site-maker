@@ -13,9 +13,6 @@ import { AlertTriangle, ArrowRight, Bell, Building2, CalendarIcon, CheckCircle2,
 import { PMCalendar } from "@/components/dashboard/PMCalendar";
 import { useFinancialAlerts } from "@/hooks/useFinancialAlerts";
 
-// IMPORT PER I WIDGET GRAFICI (STILE CEO DASHBOARD)
-import { PieChart, Pie, Label, BarChart, Bar, XAxis, YAxis } from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
 type PMProjectView = PMProject & { project_subtype?: string | null };
 
@@ -37,17 +34,6 @@ const STATUS_META = {
   },
 } as const;
 
-// CONFIGURAZIONI GRAFICI SHADCN
-const statusChartConfig = {
-  count: { label: "Projects" },
-  da_configurare: { label: "To Configure", color: "hsl(var(--warning))" },
-  in_corso: { label: "In Progress", color: "hsl(var(--primary))" },
-  certificato: { label: "Certified", color: "hsl(var(--success))" },
-};
-
-const lateChartConfig = {
-  days: { label: "Days Late", color: "hsl(var(--destructive))" },
-};
 
 
 export default function PMPortal() {
@@ -186,74 +172,118 @@ export default function PMPortal() {
           ========================================= */}
           <div className="grid gap-4 md:grid-cols-3">
             
-            {/* WIDGET: PROJECT STATUS (Donut Chart) */}
-            <Card className="flex flex-col">
-              <CardHeader className="items-center pb-0">
-                <CardTitle className="text-sm font-semibold">Project Status</CardTitle>
-                <CardDescription className="text-xs">Overview of your active projects</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 pb-4 pt-4">
-                {statusData.length === 0 ? (
-                  <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
-                    Nessun dato
+            {/* WIDGET: PROJECT STATUS (Donut SVG minimal) */}
+            <Card className="flex flex-col rounded-3xl border-border/60 shadow-sm">
+              <CardContent className="flex flex-1 flex-col p-6">
+                <h3 className="mb-6 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Project Status
+                </h3>
+                {projects.length === 0 ? (
+                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                    No data
                   </div>
                 ) : (
-                  <ChartContainer config={statusChartConfig} className="mx-auto aspect-square max-h-[200px]">
-                    <PieChart>
-                      <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                      <Pie
-                        data={statusData}
-                        dataKey="count"
-                        nameKey="status"
-                        innerRadius={50}
-                        strokeWidth={4}
-                      >
-                        <Label
-                          content={({ viewBox }) => {
-                            if (viewBox && "cx" in viewBox && "cy" in viewBox) {
-                              return (
-                                <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
-                                  <tspan x={viewBox.cx} y={viewBox.cy} className="fill-foreground text-3xl font-bold">
-                                    {projects.length}
-                                  </tspan>
-                                  <tspan x={viewBox.cx} y={(viewBox.cy || 0) + 24} className="fill-muted-foreground text-xs">
-                                    Totali
-                                  </tspan>
-                                </text>
-                              )
-                            }
-                          }}
-                        />
-                      </Pie>
-                    </PieChart>
-                  </ChartContainer>
+                  (() => {
+                    const lateCount = lateData.length;
+                    const segments = [
+                      { key: "late", label: "Late", count: lateCount, stroke: "hsl(var(--destructive))", dot: "bg-destructive" },
+                      { key: "certificato", label: "Certified", count: certificati.length, stroke: "hsl(var(--success))", dot: "bg-success" },
+                      { key: "in_corso", label: "In Progress", count: inCorso.length, stroke: "hsl(var(--primary))", dot: "bg-primary" },
+                      { key: "da_configurare", label: "To Configure", count: daConfigurare.length, stroke: "hsl(var(--muted-foreground))", dot: "bg-muted-foreground" },
+                    ];
+                    const total = projects.length;
+                    let offset = 0;
+                    return (
+                      <div className="flex flex-1 items-center justify-between gap-6">
+                        <div className="relative h-36 w-36 flex-shrink-0">
+                          <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
+                            <circle cx="18" cy="18" r="15.9" fill="transparent" stroke="hsl(var(--muted))" strokeWidth="3.5" />
+                            {segments.map((s) => {
+                              if (s.count === 0) return null;
+                              const dash = (s.count / total) * 100;
+                              const el = (
+                                <circle
+                                  key={s.key}
+                                  cx="18"
+                                  cy="18"
+                                  r="15.9"
+                                  fill="transparent"
+                                  stroke={s.stroke}
+                                  strokeWidth="3.8"
+                                  strokeDasharray={`${dash} 100`}
+                                  strokeDashoffset={-offset}
+                                  strokeLinecap="round"
+                                />
+                              );
+                              offset += dash;
+                              return el;
+                            })}
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-3xl font-semibold tracking-tight text-foreground">{total}</span>
+                            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Total</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-1 flex-col gap-3">
+                          {segments.map((s) => (
+                            <div key={s.key} className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className={cn("h-2 w-2 rounded-full", s.dot)} />
+                                <span className="text-sm font-medium text-muted-foreground">{s.label}</span>
+                              </div>
+                              <span className="text-sm font-semibold text-foreground tabular-nums">{s.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
               </CardContent>
             </Card>
 
-            {/* WIDGET: LATE PROJECTS (Horizontal Bar Chart) */}
-            <Card className="flex flex-col">
-              <CardHeader className="pb-0 pt-4">
-                <CardTitle className="text-sm font-semibold text-destructive">Late Projects (days)</CardTitle>
-                <CardDescription className="text-xs">Delayed post-handover</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 pb-4 pt-4">
+            {/* WIDGET: LATE PROJECTS (clean vertical list) */}
+            <Card className="flex flex-col rounded-3xl border-border/60 shadow-sm">
+              <CardContent className="flex flex-1 flex-col p-6">
+                <h3 className="mb-6 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Late Projects (Days)
+                </h3>
                 {lateData.length === 0 ? (
-                  <div className="flex h-[180px] items-center justify-center text-sm text-muted-foreground">
-                    Nessun progetto in ritardo
+                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                    No late projects
                   </div>
                 ) : (
-                  <ChartContainer config={lateChartConfig} className="h-[180px] w-full">
-                    <BarChart data={lateData} layout="vertical" margin={{ left: 0, right: 0, top: 0, bottom: 0 }}>
-                      <XAxis type="number" hide />
-                      <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10 }} />
-                      <ChartTooltip cursor={{ fill: 'var(--muted)' }} content={<ChartTooltipContent hideLabel />} />
-                      <Bar dataKey="days" fill="var(--color-days)" radius={[0, 4, 4, 0]} barSize={20} />
-                    </BarChart>
-                  </ChartContainer>
+                  (() => {
+                    const max = Math.max(...lateData.map((p) => p.days));
+                    return (
+                      <div className="space-y-4">
+                        {lateData.map((p, i) => {
+                          const critical = i < 2;
+                          const width = max > 0 ? Math.max(8, (p.days / max) * 100) : 0;
+                          return (
+                            <div key={`${p.name}-${i}`}>
+                              <div className="mb-1.5 flex items-end justify-between gap-2">
+                                <span className="truncate text-[13px] font-medium text-foreground">{p.name}</span>
+                                <span className={cn("text-xs font-semibold tabular-nums", critical ? "text-destructive" : "text-muted-foreground")}>
+                                  {p.days} days
+                                </span>
+                              </div>
+                              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className={cn("h-full rounded-full transition-all duration-500", critical ? "bg-destructive" : "bg-muted-foreground/40")}
+                                  style={{ width: `${width}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()
                 )}
               </CardContent>
             </Card>
+
 
             {/* WIDGET: FINANCIAL ALERTS (Clickable summary like Alerts/Tasks) */}
             <Card
