@@ -34,17 +34,6 @@ const STATUS_META = {
   },
 } as const;
 
-// CONFIGURAZIONI GRAFICI SHADCN
-const statusChartConfig = {
-  count: { label: "Projects" },
-  da_configurare: { label: "To Configure", color: "hsl(var(--warning))" },
-  in_corso: { label: "In Progress", color: "hsl(var(--primary))" },
-  certificato: { label: "Certified", color: "hsl(var(--success))" },
-};
-
-const lateChartConfig = {
-  days: { label: "Days Late", color: "hsl(var(--destructive))" },
-};
 
 
 export default function PMPortal() {
