@@ -18,6 +18,7 @@ import { ProcurementForecasting } from "@/components/dashboard/ProcurementForeca
 import { DataImporter } from "@/components/admin/DataImporter";
 import { PMProjectsBoard } from "@/components/projects/PMProjectsBoard";
 import { AdminTimeline } from "@/components/admin/AdminTimeline";
+import { ProjectsReports } from "@/components/projects/ProjectsReports";
 import { useAdminPlannerData, type AdminPlannerProject } from "@/hooks/useAdminPlannerData";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
