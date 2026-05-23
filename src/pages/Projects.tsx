@@ -387,9 +387,6 @@ export default function Projects() {
           )}
         </TabsContent>
 
-        <TabsContent value="forecast">
-          <ProcurementForecasting />
-        </TabsContent>
 
         <TabsContent value="import">
           <DataImporter />
