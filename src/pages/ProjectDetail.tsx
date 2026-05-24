@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScorecardEditor } from "@/components/projects/ScorecardEditor";
 import { ProjectWBS } from "@/components/projects/ProjectWBS";
+import { StakeholdersPanel } from "@/components/projects/StakeholdersPanel";
 import { ProjectOverview } from "@/components/projects/ProjectOverview";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectPayments } from "@/components/projects/ProjectPayments";
@@ -274,6 +275,7 @@ export default function ProjectDetail() {
           <TabsTrigger value="planner">Planner (Phases)</TabsTrigger>
           {hasCert && <TabsTrigger value="scorecard">Scorecard {(project as any).project_type}</TabsTrigger>}
           <TabsTrigger value="wbs">Schedule</TabsTrigger>
+          <TabsTrigger value="stakeholders">Stakeholders</TabsTrigger>
           <TabsTrigger value="hardware">Hardware</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="canvas">Canvas</TabsTrigger>
@@ -501,6 +503,10 @@ export default function ProjectDetail() {
 
         <TabsContent value="wbs">
           <ProjectWBS projectId={projectId!} role={role} />
+        </TabsContent>
+
+        <TabsContent value="stakeholders">
+          <StakeholdersPanel certificationId={projectId!} />
         </TabsContent>
 
         <TabsContent value="payments">
