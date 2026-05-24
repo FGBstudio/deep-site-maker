@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScorecardEditor } from "@/components/projects/ScorecardEditor";
 import { ProjectWBS } from "@/components/projects/ProjectWBS";
+import { StakeholdersPanel } from "@/components/projects/StakeholdersPanel";
 import { ProjectOverview } from "@/components/projects/ProjectOverview";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectPayments } from "@/components/projects/ProjectPayments";
