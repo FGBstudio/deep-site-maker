@@ -96,8 +96,8 @@ function StatCard({ number, label, change, color, icon: Icon }: any) {
 }
 
 export default function SupplierOrders() {
-  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [profiles, setProfiles] = useState<any[]>([]);
   
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [shipments, setShipments] = useState<any[]>([]);
@@ -176,7 +176,8 @@ export default function SupplierOrders() {
     currency: "EUR",
     status: "in_transit",
     notes: "",
-    shipped_date: ""
+    shipped_date: "",
+    shipped_by: ""
   };
 
   const [poForm, setPoForm] = useState(initialPoForm);
@@ -192,25 +193,62 @@ export default function SupplierOrders() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [poRes, shipRes, locRes, hwRes, siteRes] = await Promise.all([
+      const [poRes, shipRes, locRes, hwRes, siteRes, profilesRes] = await Promise.all([
         (supabase as any).from("ops_purchase_orders").select("*").order("created_at", { ascending: false }),
-        (supabase as any).from("ops_shipments").select("*, origin:ops_locations!origin_location_id(name), destination:ops_locations!destination_location_id(name), ops_hardware_movements(hardwares(hardware_type, category))").order("created_at", { ascending: false }),
+        (supabase as any).from("ops_shipments").select("*, origin:ops_locations!origin_location_id(name), destination:ops_locations!destination_location_id(name), ops_hardware_movements(hardwares(id, product_id, hardware_type, category, products(category, name)))").order("created_at", { ascending: false }),
         (supabase as any).from("ops_locations").select("*").order("name"),
-        supabase.from("hardwares").select("*, purchase_order:ops_purchase_orders(*)").order("created_at", { ascending: false }),
-        supabase.from("sites").select("*")
+        supabase.from("hardwares").select("*, products(category, name), purchase_order:ops_purchase_orders(*)").order("created_at", { ascending: false }),
+        supabase.from("sites").select("*"),
+        supabase.from("profiles").select("id, full_name, display_name, first_name, last_name, email").order("full_name")
       ]);
 
       setPurchaseOrders(poRes.data || []);
-      setShipments(shipRes.data || []);
+      
+      const enrichedShipments = (shipRes.data || []).map((s: any) => ({
+        ...s,
+        ops_hardware_movements: (s.ops_hardware_movements || []).map((m: any) => {
+          if (!m.hardwares) return m;
+          const hw = m.hardwares;
+          const prod = hw.products;
+          return {
+            ...m,
+            hardwares: {
+              ...hw,
+              category: hw.category || prod?.category || "AIR",
+              hardware_type: hw.hardware_type || prod?.name || null
+            }
+          };
+        })
+      }));
+      setShipments(enrichedShipments);
+      
       setLocations(locRes.data || []);
-      setHardwares((hwRes.data || []).map((h: any) => ({
-        ...h,
-        fulfillment_status: h.fulfillment_status || (h.shipment_date ? "Delivered" : (h.status === 'In Stock' ? "Ready" : "Allocated"))
-      })));
+      
+      const enrichedHw = (hwRes.data || []).map((h: any) => {
+        const prod = h.products;
+        return {
+          ...h,
+          category: h.category || prod?.category || "AIR",
+          hardware_type: h.hardware_type || prod?.name || null,
+          fulfillment_status: h.fulfillment_status || (h.shipment_date ? "Delivered" : (h.status === 'In Stock' ? "Ready" : "Allocated"))
+        };
+      });
+      setHardwares(enrichedHw);
       setSites(siteRes.data || []);
 
+      const formattedProfiles = (profilesRes.data || []).map((p: any) => ({
+        id: p.id,
+        full_name:
+          p.full_name ||
+          p.display_name ||
+          [p.first_name, p.last_name].filter(Boolean).join(" ") ||
+          p.email ||
+          "User",
+      }));
+      setProfiles(formattedProfiles);
+
       if (selectedId) {
-        const foundHw = (hwRes.data || []).find((h:any) => h.id === selectedId);
+        const foundHw = enrichedHw.find((h:any) => h.id === selectedId);
         if (foundHw) {
           setSelectedHardware(foundHw);
           const { data: movements } = await (supabase as any)
@@ -268,7 +306,8 @@ export default function SupplierOrders() {
       currency: ship.currency || "EUR",
       status: ship.status || "in_transit",
       notes: ship.notes || "",
-      shipped_date: ship.shipped_date || ""
+      shipped_date: ship.shipped_date || "",
+      shipped_by: ship.shipped_by || ""
     });
 
     const carrierStr = ship.carrier_name || "";
@@ -329,27 +368,47 @@ export default function SupplierOrders() {
         total_shipping_cost: parseFloat(shipmentForm.total_shipping_cost) || 0,
         customs_cost: parseFloat(shipmentForm.customs_cost) || 0,
         purchase_order_id: shipmentForm.purchase_order_id || null,
-        shipped_date: shipmentForm.shipped_date || null
+        origin_location_id: shipmentForm.origin_location_id || null,
+        destination_location_id: shipmentForm.destination_location_id || null,
+        shipped_date: shipmentForm.shipped_date || null,
+        shipped_by: shipmentForm.shipped_by || null
       };
 
       let shipId = editingShipmentId;
       if (editingShipmentId) {
-        await (supabase as any).from("ops_shipments").update(payload).eq("id", editingShipmentId);
+        const { error: updateErr } = await (supabase as any)
+          .from("ops_shipments")
+          .update(payload)
+          .eq("id", editingShipmentId);
+        if (updateErr) throw updateErr;
       } else {
-        const { data } = await (supabase as any).from("ops_shipments").insert([payload]).select();
+        const { data, error: insertErr } = await (supabase as any)
+          .from("ops_shipments")
+          .insert([payload])
+          .select();
+        if (insertErr) throw insertErr;
         shipId = data?.[0].id;
       }
 
       if (shipId && selectedHwIds.length > 0) {
         // First, clear existing associations for this shipment to avoid duplicates
-        await (supabase as any).from("ops_hardware_movements").delete().eq("shipment_id", shipId);
+        const { error: delErr } = await (supabase as any)
+          .from("ops_hardware_movements")
+          .delete()
+          .eq("shipment_id", shipId);
+        if (delErr) throw delErr;
         
         const movements = selectedHwIds.map(hid => ({
           hardware_id: hid,
           shipment_id: shipId,
-          action: payload.status === 'delivered' ? 'received' : 'dispatched'
+          action: payload.status === 'delivered' 
+            ? 'received' 
+            : (payload.status === 'in_transit' ? 'in_transit' : 'dispatched')
         }));
-        await (supabase as any).from("ops_hardware_movements").insert(movements);
+        const { error: insErr } = await (supabase as any)
+          .from("ops_hardware_movements")
+          .insert(movements);
+        if (insErr) throw insErr;
       }
       
       toast({ title: "Success", description: `Shipment updated with ${selectedHwIds.length} devices.` });
@@ -412,11 +471,20 @@ export default function SupplierOrders() {
   }, [shipments, portfolioFilter, monthFilter]);
 
   const outboundShipments = useMemo(() => {
-    return shipments.filter(s => {
+    const rawList = shipments.filter(s => {
       if (s.shipment_type !== 'outbound') return false;
       const matchesSearch = !searchQuery || s.destination?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-      const isFulfilled = s.status === 'delivered';
-      const matchesSubTab = outboundSubTab === 'shipped' ? isFulfilled : !isFulfilled;
+      
+      let matchesSubTab = false;
+      if (outboundSubTab === 'shipped') {
+        matchesSubTab = s.status === 'delivered';
+      } else if (outboundSubTab === 'intransit') {
+        matchesSubTab = s.status === 'in_transit';
+      } else {
+        // awaiting dispatch or upcoming
+        matchesSubTab = s.status === 'awaiting dispatch' || s.status === 'upcoming';
+      }
+
       const matchesOrigin = outboundOriginFilter === "ALL" || s.origin_location_id === outboundOriginFilter;
       const matchesPortfolio = portfolioFilter === "ALL" || s.ops_hardware_movements?.some((m: any) => m.hardwares?.category?.toUpperCase() === portfolioFilter);
       
@@ -429,6 +497,29 @@ export default function SupplierOrders() {
       
       return matchesSearch && matchesSubTab && matchesOrigin && matchesPortfolio && matchesMonth;
     });
+
+    if (outboundSubTab !== 'awaiting') return rawList;
+
+    // Group awaiting dispatch shipments by destination site/location
+    const grouped = new Map<string, any>();
+    for (const s of rawList) {
+      const key = s.destination_location_id || s.destination?.name || s.id;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          ...s,
+          ops_hardware_movements: [...(s.ops_hardware_movements || [])],
+        });
+      } else {
+        const existing = grouped.get(key);
+        if (s.ops_hardware_movements) {
+          existing.ops_hardware_movements.push(...s.ops_hardware_movements);
+        }
+        if (s.notes && !existing.notes?.includes(s.notes)) {
+          existing.notes = (existing.notes ? existing.notes + "; " : "") + s.notes;
+        }
+      }
+    }
+    return Array.from(grouped.values());
   }, [shipments, searchQuery, outboundSubTab, outboundOriginFilter, portfolioFilter, monthFilter]);
 
   const selectableHardware = useMemo(() => {
@@ -751,7 +842,11 @@ export default function SupplierOrders() {
                               </div>
                               <div className="flex items-center gap-4">
                                 <div className="text-right"><p className="text-[10px] font-mono font-bold text-slate-600">{s.currency} {Number(s.total_shipping_cost).toLocaleString()}</p></div>
-                                <Badge className={cn("text-[8px] uppercase h-5", s.status === 'delivered' ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600")}>{s.status}</Badge>
+                                <Badge className={cn("text-[8px] uppercase h-5", 
+                                   s.status === 'delivered' 
+                                     ? "bg-green-50 text-green-600" 
+                                     : (s.status === 'in_transit' ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600")
+                                 )}>{s.status?.replace('_',' ')}</Badge>
                                 <Button variant="ghost" size="icon" onClick={() => handleEditShipment(s)} className="h-7 w-7 text-slate-300 hover:text-[#009193]"><Edit3 className="h-3 w-3" /></Button>
                               </div>
                             </div>
@@ -813,7 +908,11 @@ export default function SupplierOrders() {
                       <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><History className="h-3 w-3" /> {hwCount} Units</div>
                       {typeStrings.length > 0 && <span className="text-[9px] font-bold text-[#009193]">{typeStrings.join(', ')}</span>}
                     </div>
-                    <Badge className={cn("text-[9px] uppercase border-none px-2", s.status === 'delivered' ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600")}>{s.status}</Badge>
+                     <Badge className={cn("text-[9px] uppercase border-none px-2", 
+                       s.status === 'delivered' 
+                         ? "bg-green-50 text-green-600" 
+                         : (s.status === 'in_transit' ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600")
+                     )}>{s.status?.replace('_',' ')}</Badge>
                   </div>
                 </div>
               )})}
@@ -826,11 +925,12 @@ export default function SupplierOrders() {
               <div className="flex items-center gap-4">
                 <Tabs value={outboundSubTab} onValueChange={(v)=>setParam("sub", v)} className="w-fit">
                   <TabsList className="bg-slate-100 p-1 h-9">
-                    <TabsTrigger value="awaiting" className="text-xs px-4 data-[state=active]:bg-white">Awaiting Dispatch ({shipments.filter(s => s.shipment_type === 'outbound' && s.status !== 'delivered' && (portfolioFilter === "ALL" || s.ops_hardware_movements?.some((m: any) => m.hardwares?.category?.toUpperCase() === portfolioFilter))).length})</TabsTrigger>
+                    <TabsTrigger value="awaiting" className="text-xs px-4 data-[state=active]:bg-white">Awaiting Dispatch ({shipments.filter(s => s.shipment_type === 'outbound' && (s.status === 'awaiting dispatch' || s.status === 'upcoming') && (portfolioFilter === "ALL" || s.ops_hardware_movements?.some((m: any) => m.hardwares?.category?.toUpperCase() === portfolioFilter))).length})</TabsTrigger>
+                    <TabsTrigger value="intransit" className="text-xs px-4 data-[state=active]:bg-white">In Transit ({shipments.filter(s => s.shipment_type === 'outbound' && s.status === 'in_transit' && (portfolioFilter === "ALL" || s.ops_hardware_movements?.some((m: any) => m.hardwares?.category?.toUpperCase() === portfolioFilter))).length})</TabsTrigger>
                     <TabsTrigger value="shipped" className="text-xs px-4 data-[state=active]:bg-white">Fulfilled ({shipments.filter(s => s.shipment_type === 'outbound' && s.status === 'delivered' && (portfolioFilter === "ALL" || s.ops_hardware_movements?.some((m: any) => m.hardwares?.category?.toUpperCase() === portfolioFilter))).length})</TabsTrigger>
                   </TabsList>
                 </Tabs>
-                {outboundSubTab === 'shipped' && (
+                {outboundSubTab !== 'awaiting' && (
                   <Select value={outboundOriginFilter} onValueChange={setOutboundOriginFilter}>
                     <SelectTrigger className="h-9 w-[180px] text-xs bg-slate-50 border-slate-200">
                       <SelectValue placeholder="Origin Office" />
@@ -872,8 +972,14 @@ export default function SupplierOrders() {
                   <div key={s.id} className="premium-card glass p-4 border border-slate-100 hover:border-[#009193]/30 transition-all cursor-pointer group" onClick={() => handleEditShipment(s)}>
                     <div className="flex justify-between items-start mb-4">
                       <Badge variant="outline" className="text-[9px] uppercase font-bold text-[#009193] bg-[#009193]/5 border-[#009193]/10">OUTBOUND</Badge>
-                      <div className="text-right">
-                        {s.shipped_date && <p className="text-[10px] font-mono text-[#009193] font-bold">Shipped: {format(new Date(s.shipped_date), "dd MMM yyyy")}</p>}
+                      <div className="text-right font-semibold">
+                        {s.status === 'delivered' ? (
+                          s.shipped_date ? <p className="text-[10px] font-mono text-[#009193] font-bold">Delivered: {format(new Date(s.shipped_date), "dd MMM yyyy")}</p> : <p className="text-[10px] font-mono text-[#009193] font-bold">Delivered</p>
+                        ) : s.status === 'in_transit' ? (
+                          s.shipped_date ? <p className="text-[10px] font-mono text-[#009193] font-bold">In Transit: {format(new Date(s.shipped_date), "dd MMM yyyy")}</p> : <p className="text-[10px] font-mono text-[#009193] font-bold">In Transit</p>
+                        ) : (
+                          <p className="text-[10px] font-mono text-amber-600 font-bold">Waiting to be shipped</p>
+                        )}
                         <p className="text-[9px] font-mono text-slate-400">Created: {format(new Date(s.created_at), "dd MMM yyyy")}</p>
                       </div>
                     </div>
@@ -886,7 +992,11 @@ export default function SupplierOrders() {
                         <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><History className="h-3 w-3" /> {hwCount} Units</div>
                         {typeStrings.length > 0 && <span className="text-[9px] font-bold text-[#009193]">{typeStrings.join(', ')}</span>}
                       </div>
-                      <Badge className={cn("text-[9px] uppercase border-none px-2", s.status === 'delivered' ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600")}>{s.status}</Badge>
+                      <Badge className={cn("text-[9px] uppercase border-none px-2", 
+                        s.status === 'delivered' 
+                          ? "bg-green-50 text-green-600" 
+                          : (s.status === 'in_transit' ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600")
+                      )}>{s.status?.replace('_',' ')}</Badge>
                     </div>
                   </div>
                 );
@@ -956,6 +1066,20 @@ export default function SupplierOrders() {
                <div className="grid grid-cols-2 gap-4">
                  <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Tracking Number</Label><Input placeholder="AB1234567" className="h-9 text-xs" value={shipmentForm.tracking_number} onChange={(e)=>setShipmentForm({...shipmentForm, tracking_number: e.target.value})} /></div>
                  <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Shipped Date</Label><Input type="date" className="h-9 text-xs" value={shipmentForm.shipped_date} onChange={(e)=>setShipmentForm({...shipmentForm, shipped_date: e.target.value})} /></div>
+               </div>
+               <div className="space-y-2">
+                 <Label className="text-[10px] font-bold uppercase text-slate-400">Shipped By</Label>
+                 <Select value={shipmentForm.shipped_by || "none"} onValueChange={(v)=>setShipmentForm({...shipmentForm, shipped_by: v === "none" ? "" : v})}>
+                   <SelectTrigger className="h-9 text-xs">
+                     <SelectValue placeholder="Select PM / Operator" />
+                   </SelectTrigger>
+                   <SelectContent>
+                     <SelectItem value="none">None / Unassigned</SelectItem>
+                     {profiles.map((p: any) => (
+                       <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>
+                     ))}
+                   </SelectContent>
+                 </Select>
                </div>
                <div className="space-y-2"><Label className="text-[10px] font-bold uppercase text-slate-400">Notes</Label><Textarea placeholder="Operational details..." className="h-20 text-xs" value={shipmentForm.notes} onChange={(e)=>setShipmentForm({...shipmentForm, notes: e.target.value})} /></div>
             </div>
