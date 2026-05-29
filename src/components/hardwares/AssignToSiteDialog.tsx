@@ -60,6 +60,7 @@ interface AssignmentSlot {
   productId: string;
   productName: string;
   hardwareId: string | null;
+  searchQuery?: string;
 }
 
 interface Props {
@@ -88,6 +89,7 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
   });
   const [saving, setSaving] = useState(false);
   const [stockCountry, setStockCountry] = useState<string>("all");
+  const [activeSlotFocus, setActiveSlotFocus] = useState<number | null>(null);
 
   const { data: pms = [] } = useProjectManagers();
 
@@ -234,6 +236,7 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
             productId: r.productId,
             productName: r.productName,
             hardwareId: null,
+            searchQuery: "",
           });
         }
       }
@@ -284,7 +287,7 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
       console.log("Logistics Trigger: Starting. Site ID:", selectedSiteId, "Name:", selectedCert?.sites?.name);
       toast({ title: "Logistics Sync Started", description: "Creating automated shipment record..." });
 
-      // 1. Automated Logistics Trigger: Create Outbound Shipment (Do this first!)
+      // 1. Automated Logistics Trigger: Create or reuse Outbound Shipment (Do this first!)
       let newShipmentId: string | null = null;
       try {
         // Try matching by name (Case-Insensitive) OR by ID (if they share UUIDs)
@@ -297,24 +300,55 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
         if (locErr) console.error("Logistics Trigger: Location search error:", locErr);
         
         const destinationId = locations?.[0]?.id;
-        const shipmentPayload = {
-          shipment_type: "outbound",
-          status: "awaiting dispatch",
-          destination_location_id: destinationId || null,
-          notes: `Automated shipment triggered by hardware assignment to site: ${selectedCert?.sites?.name || "Unknown"}`
-        };
 
-        const { data: shipData, error: shipErr } = await (supabase as any)
-          .from("ops_shipments")
-          .insert([shipmentPayload])
-          .select();
+        if (destinationId) {
+          // Check if there is an existing awaiting dispatch outbound shipment to consolidate
+          const { data: existingShips, error: existErr } = await (supabase as any)
+            .from("ops_shipments")
+            .select("id, notes")
+            .eq("shipment_type", "outbound")
+            .eq("status", "awaiting dispatch")
+            .eq("destination_location_id", destinationId)
+            .order("created_at", { ascending: false })
+            .limit(1);
 
-        if (shipErr) {
-          console.error("Logistics Trigger: Shipment creation failed:", shipErr);
-          toast({ title: "Logistics Error", description: `Shipment failed: ${shipErr.message}`, variant: "destructive" });
-        } else if (shipData && shipData[0]) {
-          newShipmentId = shipData[0].id;
-          console.log("Logistics Trigger: Shipment created:", newShipmentId);
+          if (existErr) console.error("Logistics Trigger: Existing shipment search error:", existErr);
+
+          if (existingShips && existingShips[0]) {
+            newShipmentId = existingShips[0].id;
+            console.log("Logistics Trigger: Consolidating into existing shipment:", newShipmentId);
+
+            const oldNotes = existingShips[0].notes || "";
+            const appendNotes = `; Consolidated hardware assignment for site: ${selectedCert?.sites?.name || "Unknown"}`;
+            if (!oldNotes.includes(appendNotes)) {
+              await (supabase as any)
+                .from("ops_shipments")
+                .update({ notes: (oldNotes + appendNotes).substring(0, 1000) })
+                .eq("id", newShipmentId);
+            }
+          }
+        }
+        
+        if (!newShipmentId) {
+          const shipmentPayload = {
+            shipment_type: "outbound",
+            status: "awaiting dispatch",
+            destination_location_id: destinationId || null,
+            notes: `Automated shipment triggered by hardware assignment to site: ${selectedCert?.sites?.name || "Unknown"}`
+          };
+
+          const { data: shipData, error: shipErr } = await (supabase as any)
+            .from("ops_shipments")
+            .insert([shipmentPayload])
+            .select();
+
+          if (shipErr) {
+            console.error("Logistics Trigger: Shipment creation failed:", shipErr);
+            toast({ title: "Logistics Error", description: `Shipment failed: ${shipErr.message}`, variant: "destructive" });
+          } else if (shipData && shipData[0]) {
+            newShipmentId = shipData[0].id;
+            console.log("Logistics Trigger: Shipment created:", newShipmentId);
+          }
         }
       } catch (logisticsErr) {
         console.error("Logistics trigger inner error:", logisticsErr);
@@ -583,8 +617,7 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
               </div>
             </details>
           )}
-
-          {/* Slot da assegnare */}
+                 {/* Slot da assegnare */}
           {slots.length > 0 && (
             <div className="space-y-2">
               <p className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">
@@ -594,13 +627,29 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
                 const candidates = allStock.filter(
                   (h) => {
                     const matchesProduct = h.product_id === slot.productId;
-                    const matchesCategory = (h.category?.toUpperCase() || "AIR") === mode;
+                    const matchesCategory = (() => {
+                      const hwCat = h.category?.toUpperCase();
+                      if (hwCat) return hwCat === mode;
+                      const prod = allProducts.find(p => p.id === h.product_id);
+                      const prodCat = prod?.category?.toUpperCase();
+                      if (prodCat) return prodCat === mode;
+                      return mode === "AIR";
+                    })();
                     const matchesCountry = stockCountry === "all" || h.country === stockCountry;
                     const notTaken = h.id === slot.hardwareId || !slots.some(s => s.hardwareId === h.id);
 
                     return matchesProduct && matchesCategory && matchesCountry && notTaken;
                   }
                 );
+
+                const query = (slot.searchQuery || "").trim().toLowerCase();
+                const filteredCandidates = candidates.filter(
+                  (c) =>
+                    !query ||
+                    c.device_id.toLowerCase().includes(query) ||
+                    (c.mac_address || "").toLowerCase().includes(query)
+                );
+
                 return (
                   <div key={idx} className="grid grid-cols-[1fr_auto] gap-2 items-end border-b border-slate-100 pb-3 last:border-0">
                     <div className="grid gap-2">
@@ -624,7 +673,8 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
                               updateSlot(idx, {
                                 productId: v,
                                 productName: p?.name || slot.productName,
-                                hardwareId: null
+                                hardwareId: null,
+                                searchQuery: ""
                               });
                             }}
                           >
@@ -640,33 +690,76 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="flex-[2]">
-                          <Select
-                            value={slot.hardwareId ?? ""}
-                            onValueChange={(v) => updateSlot(idx, { hardwareId: v })}
-                          >
-                            <SelectTrigger className="h-9 border-slate-200">
-                              <SelectValue placeholder="Pick physical device (serial · MAC)" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {candidates.length === 0 && (
-                                <div className="px-2 py-1.5 text-xs text-muted-foreground">No matching {slot.productName} in stock</div>
-                              )}
-                              {candidates.map((h) => (
-                                <SelectItem key={h.id} value={h.id}>
-                                  <div className="flex flex-col">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-mono font-bold text-[#009193]">{h.device_id}</span>
-                                      <Badge variant="outline" className="text-[9px] opacity-70 py-0 px-1 border-slate-200">
+                        <div className="relative flex-[2]">
+                          <Input
+                            type="text"
+                            placeholder="Type/paste serial number or MAC..."
+                            value={slot.searchQuery ?? ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateSlot(idx, { searchQuery: val });
+
+                              // Auto-select if there is an exact case-insensitive match for device_id or mac_address
+                              const exactMatch = candidates.find(
+                                (c) =>
+                                  c.device_id.toLowerCase() === val.trim().toLowerCase() ||
+                                  (c.mac_address && c.mac_address.toLowerCase() === val.trim().toLowerCase())
+                              );
+                              if (exactMatch) {
+                                updateSlot(idx, { hardwareId: exactMatch.id, searchQuery: exactMatch.device_id });
+                              } else {
+                                // If they clear the input, clear the selection
+                                if (!val) {
+                                  updateSlot(idx, { hardwareId: null });
+                                }
+                              }
+                            }}
+                            onFocus={() => setActiveSlotFocus(idx)}
+                            onBlur={() => {
+                              // Delay closing to allow clicking on dropdown items
+                              setTimeout(() => {
+                                setActiveSlotFocus((curr) => (curr === idx ? null : curr));
+                              }, 200);
+                            }}
+                            className="h-9 text-xs font-mono font-bold text-[#009193] border-slate-200 focus-visible:ring-[#009193] focus:border-[#009193] bg-slate-50/50"
+                          />
+
+                          {/* Floating candidates dropdown list */}
+                          {activeSlotFocus === idx && (
+                            <div className="absolute z-50 w-full mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg divide-y divide-slate-100 font-sans glass-heavy">
+                              {filteredCandidates.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-slate-400 italic">
+                                  No matching devices in stock
+                                </div>
+                              ) : (
+                                filteredCandidates.map((h) => (
+                                  <button
+                                    key={h.id}
+                                    type="button"
+                                    className={cn(
+                                      "w-full text-left px-3 py-2 hover:bg-[#009193]/5 transition-colors flex flex-col",
+                                      slot.hardwareId === h.id && "bg-[#009193]/10"
+                                    )}
+                                    onMouseDown={() => {
+                                      updateSlot(idx, { hardwareId: h.id, searchQuery: h.device_id });
+                                    }}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-mono font-bold text-xs text-[#009193]">{h.device_id}</span>
+                                      <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
                                         {h.hardware_type || "No Model"}
-                                      </Badge>
+                                      </span>
                                     </div>
-                                    {h.mac_address && <span className="text-[10px] text-muted-foreground opacity-70">MAC: {h.mac_address}</span>}
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                                    {h.mac_address && (
+                                      <span className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                        MAC: {h.mac_address}
+                                      </span>
+                                    )}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -674,7 +767,7 @@ export function AssignToSiteDialog({ open, onOpenChange, hardwares, onSaved }: P
                       variant="ghost"
                       size="sm"
                       className="h-9 mb-[2px] text-slate-400 hover:text-destructive"
-                      onClick={() => updateSlot(idx, { hardwareId: null })}
+                      onClick={() => updateSlot(idx, { hardwareId: null, searchQuery: "" })}
                     >
                       Clear
                     </Button>
