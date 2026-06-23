@@ -30,6 +30,12 @@ import NotFound from "./pages/NotFound";
 import Monitor from "./pages/Monitor";
 import MyTimesheet from "./pages/MyTimesheet";
 import TeamBoard from "./pages/TeamBoard";
+import HrHub from "./pages/HrHub";
+import HrAvailability from "./pages/hr/HrAvailability";
+import HrRequests from "./pages/hr/HrRequests";
+import HrAttendance from "./pages/hr/HrAttendance";
+import HrScanner from "./pages/hr/HrScanner";
+
 
 // MODIFICA QUI: Configurazione del QueryClient per evitare refresh molesti
 const queryClient = new QueryClient({
@@ -73,7 +79,12 @@ function AppRoutes() {
 
       {/* ── Coming Soon sections ── */}
       <Route path="/office" element={<ProtectedRoute allowedRoles={R("ADMIN")}><ComingSoon section={section("office")} /></ProtectedRoute>} />
-      <Route path="/hr" element={<ProtectedRoute allowedRoles={R("ADMIN", "PM")}><ComingSoon section={section("hr")} /></ProtectedRoute>} />
+      <Route path="/hr" element={<ProtectedRoute allowedRoles={R("ADMIN", "PM")}><HrHub /></ProtectedRoute>} />
+      <Route path="/hr/availability" element={<ProtectedRoute allowedRoles={R("ADMIN", "PM")}><HrAvailability /></ProtectedRoute>} />
+      <Route path="/hr/requests" element={<ProtectedRoute allowedRoles={R("ADMIN", "PM")}><HrRequests /></ProtectedRoute>} />
+      <Route path="/hr/attendance" element={<ProtectedRoute allowedRoles={R("ADMIN", "PM")}><HrAttendance /></ProtectedRoute>} />
+      <Route path="/hr/scanner" element={<ProtectedRoute allowedRoles={R("ADMIN")}><HrScanner /></ProtectedRoute>} />
+
       <Route path="/monitor" element={<ProtectedRoute allowedRoles={R("ADMIN", "PM")}><Monitor /></ProtectedRoute>} />
       <Route path="/invoice" element={<ProtectedRoute allowedRoles={R("ADMIN")}><InvoicePage /></ProtectedRoute>} />
 

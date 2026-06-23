@@ -41,13 +41,14 @@ export const HUB_SECTIONS: HubSection[] = [
   {
     id: "hr",
     name: "HR",
-    desc: "Human resources, leave, org chart",
+    desc: "Availability, leave requests, attendance",
     color: "#f8cbcc",
     filter: "sepia(1) saturate(2) hue-rotate(300deg) brightness(1.4)",
     route: "/hr",
-    comingSoon: true,
+    comingSoon: false,
     allowedRoles: ["ADMIN", "PM"],
   },
+
   {
     id: "monitor",
     name: "MONITOR",
@@ -87,6 +88,14 @@ export const PROJECTS_SECTION_PATHS = [
   "/timesheet",
 ];
 
+export const HR_SECTION_PATHS = [
+  "/hr",
+  "/hr/availability",
+  "/hr/requests",
+  "/hr/attendance",
+  "/hr/scanner",
+];
+
 export function isInProjectsSection(pathname: string): boolean {
   return PROJECTS_SECTION_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
@@ -98,6 +107,7 @@ export function getSectionForPath(pathname: string): HubSection | null {
     (s) => s.route === pathname || pathname.startsWith(s.route + "/")
   ) ?? null;
 }
+
 
 export function getGreeting(): string {
   const h = new Date().getHours();
