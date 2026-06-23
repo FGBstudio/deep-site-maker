@@ -59,7 +59,7 @@ export default function HrAvailability() {
   const del = useDeleteAvailability();
 
   const byKey = useMemo(() => {
-    const m = new Map<string, HrAvailability>();
+    const m = new Map<string, HrAvailabilityRow>();
     avail.forEach((a) => m.set(`${a.user_id}|${a.date}`, a));
     return m;
   }, [avail]);
@@ -191,7 +191,7 @@ function CellEditor({
   onSave,
   onDelete,
 }: {
-  cell?: HrAvailability;
+  cell?: HrAvailabilityRow;
   userId: string;
   date: string;
   onSave: (input: {
