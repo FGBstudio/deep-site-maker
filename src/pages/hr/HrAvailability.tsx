@@ -16,14 +16,14 @@ import {
   isWeekend,
   startOfMonth,
 } from "date-fns";
+import type { AvailabilityStatus, HrAvailability as HrAvailabilityRow } from "@/hooks/useHr";
 import {
-  AvailabilityStatus,
-  HrAvailability,
   useDeleteAvailability,
   useHrAvailability,
   useHrProfiles,
   useUpsertAvailability,
 } from "@/hooks/useHr";
+
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_LABEL: Record<AvailabilityStatus, string> = {
