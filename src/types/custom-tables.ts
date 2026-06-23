@@ -35,10 +35,12 @@ export interface ProjectAllocation {
   certification_id: string;
   product_id: string;
   quantity: number;
+  requested_quantity?: number | null;
   status: string;
   target_date: string | null;
   created_at: string;
 }
+
 
 export interface SupplierOrder {
   id: string;
