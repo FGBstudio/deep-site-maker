@@ -1,51 +1,98 @@
-# Reports tab — Projects section
+# HR Section — Availability, Leave Requests, QR Attendance
 
-Add a fourth tab **Reports** to `src/pages/Projects.tsx` (next to Projects / Timeline / Device Demand Analysis) that gives Admin a large, detailed operational analysis of project health: who's late, why they're on hold, and the breakdown of statuses.
+Attivo la sezione HR (oggi `comingSoon`) e implemento 3 moduli + lo scanner integrato dal progetto `entry-watcher`.
 
-## Layout
+## 1. Database (1 migration)
 
-Single scrollable view, full width, Apple-minimal cards (`rounded-3xl`, `border-border/60`, `shadow-sm`).
+**Tabelle nuove:**
 
-```text
-┌────────────────────────────────────────────────────────────────┐
-│  KPI strip:  Total  ·  In Progress  ·  Late  ·  On Hold  ·  Certified │
-├──────────────────────────────────┬─────────────────────────────┤
-│  Status Breakdown (donut + list) │  Macro-phase distribution    │
-│  setup_status counts             │  Design / Construction /     │
-│                                  │  Certification / Certified   │
-├──────────────────────────────────┴─────────────────────────────┤
-│  LATE PROJECTS — detailed table                                 │
-│  Project · Client · PM · Handover · Days late · Late milestone │
-│  · Macro phase                                                  │
-├────────────────────────────────────────────────────────────────┤
-│  ON-HOLD PROJECTS — detailed list                               │
-│  Project · PM · On-hold since · Reason (note from task_alert)   │
-│  · Affected milestone                                           │
-├────────────────────────────────────────────────────────────────┤
-│  CRITICAL DEADLINES (<15d) — quick list                         │
-└────────────────────────────────────────────────────────────────┘
+- `hr_availability` — riga per utente/giorno
+  - `user_id uuid`, `date date`, `status` (`available` | `busy` | `off` | `travel` | `remote`), `note text`, `hours_planned numeric`
+  - UNIQUE(user_id, date)
+- `hr_requests`
+  - `user_id`, `type` (`holiday` | `permit` | `travel`), `start_date`, `end_date`, `start_time`, `end_time`, `reason text`, `status` (`pending` | `approved` | `rejected`), `manager_note text`, `approved_by uuid`, `approved_at`
+- `hr_attendance`
+  - `user_id`, `timestamp_in timestamptz`, `timestamp_out timestamptz`, `location_lat`, `location_lng`, `status` (`auto_qr` | `manual_override`), `approved_by uuid`, `device_label text`, `note text`
+- `hr_qr_tokens` — token QR personali per utente (per scanner)
+  - `user_id`, `token text unique`, `active bool`, `rotated_at`
+
+**GRANT + RLS** (uso `is_admin(auth.uid())` già presente):
+
+- `hr_availability`: SELECT a tutti gli `authenticated` (vista d'insieme). INSERT/UPDATE/DELETE solo su `user_id = auth.uid()`; Admin tutto.
+- `hr_requests`: SELECT proprie righe + Admin tutto. INSERT proprie. UPDATE: proprie se `status='pending'`; Admin sempre (per approvazione).
+- `hr_attendance`: SELECT proprie + Admin tutto. INSERT solo Admin (scanner) o `user_id = auth.uid()` per override richiesto, ma UPDATE/APPROVE solo Admin.
+- `hr_qr_tokens`: SELECT proprio token; Admin tutto.
+
+**Trigger:** all'`approved` di un `hr_request` di tipo `holiday`/`permit`, popolare `hr_availability` con `status='off'` per il range.
+
+## 2. Frontend
+
+Nuove route protette (allowedRoles `ADMIN`, `PM`):
+
+```
+/hr                        → HR Hub (3 card: Availability, Requests, Attendance)
+/hr/availability           → Calendario condiviso
+/hr/requests               → Le mie richieste + (Admin) coda approvazione
+/hr/attendance             → Registro presenze (Admin: pulsante "Apri Scanner")
+/hr/scanner                → Solo Admin: QR scanner fullscreen
 ```
 
-## Data sources (no new queries on existing tables logic)
+**Update `hubSections.ts`:** `hr.comingSoon = false`, e aggiungo `HR_SECTION_PATHS` con le route sopra, analogo a `PROJECTS_SECTION_PATHS`.
 
-- `useAdminPlannerData()` — already provides per cert: `setup_status`, `macro_phase`, `handover_date`, `is_deadline_critical`, `plannerData.status` (incl. `on_hold`), `pm_name`, `client`.
-- New lightweight hook `useProjectsReportData()` (in `src/hooks/`) extending what's available:
-  - For **late milestones**: query `certification_milestones` where `due_date < today` and `status != 'achieved'`, grouped by `certification_id` → pick worst (most overdue) per cert.
-  - For **on-hold reasons**: query `task_alerts` where `alert_type = 'project_on_hold'`, latest per `certification_id`, take `note` and `created_at`.
-- Combine with the planner data already in cache via `queryClient.getQueryData(["admin-planner-all-certifications"])` to avoid double fetching.
+### Availability (`/hr/availability`)
+- Griglia mensile orizzontale: righe = utenti (da `profiles`), colonne = giorni del mese corrente (navigazione mese precedente/successivo).
+- Cella colorata per `status`; tooltip con `note`.
+- Click su cella: editabile **solo** se `row.user_id === auth.uid()` o utente è Admin. Popover con select status + note + hours.
+- Admin ha badge "Manager mode" e può editare qualsiasi riga.
+- Realtime opzionale via Supabase channel su `hr_availability`.
 
-## Components
+### Requests (`/hr/requests`)
+- Tab "Le mie richieste" (lista + form "Nuova richiesta": tipo, date range, motivo).
+- Tab "Da approvare" (visibile solo ad Admin): lista `pending`, bottoni Approve/Reject con `manager_note`.
+- Stato → toast + invalidate query. Admin può anche creare richieste proprie.
 
-New file `src/components/projects/ProjectsReports.tsx` containing all the sections above. Pure presentation + the new hook. Uses existing semantic tokens (`destructive`, `warning`, `success`, `primary`, `muted-foreground`) — no hardcoded colors. Donut is the same custom SVG style already used in PMPortal for consistency.
+### Attendance (`/hr/attendance`)
+- Tabella registro con filtro per utente/giorno.
+- Admin vede tutti; PM vede solo se stesso.
+- Admin: bottone "Apri Scanner" che porta a `/hr/scanner`.
+- Permette di marcare `manual_override` con approvazione Admin.
 
-## Wiring
+### Scanner (`/hr/scanner`, solo Admin)
+- Porto i componenti chiave da `entry-watcher`: `QRScanner.tsx` (libreria già presente o `html5-qrcode`/`@zxing/browser`), adattato per:
+  - Leggere token QR → lookup `hr_qr_tokens.token` → ottenere `user_id`.
+  - Determinare se è check-in o check-out (ultimo record aperto dell'utente nello stesso giorno).
+  - `INSERT`/`UPDATE` su `hr_attendance` con `status='auto_qr'`, geolocation opzionale (`navigator.geolocation`).
+  - Feedback visivo: nome utente + IN/OUT + timestamp.
+- Stampa QR per ciascun utente (Admin): pulsante "Genera/Rigenera QR" nella tabella utenti, mostra QR (libreria `qrcode`).
 
-In `src/pages/Projects.tsx`:
-- Add `<TabsTrigger value="reports">` with a `FileText` icon.
-- Add `<TabsContent value="reports"><ProjectsReports/></TabsContent>`.
+**Dipendenze nuove:** `@zxing/browser` (scanner) + `qrcode` (generazione). Tutto client-side.
 
-## Out of scope
+## 3. Hooks/Files
 
-- No DB schema changes.
-- No edits to PM view (`PMProjectsBoard`).
-- No changes to existing tabs.
+```
+src/hooks/useHrAvailability.ts
+src/hooks/useHrRequests.ts
+src/hooks/useHrAttendance.ts
+src/hooks/useHrQrTokens.ts
+src/pages/HrHub.tsx
+src/pages/hr/Availability.tsx
+src/pages/hr/Requests.tsx
+src/pages/hr/Attendance.tsx
+src/pages/hr/Scanner.tsx
+src/components/hr/AvailabilityCell.tsx
+src/components/hr/RequestForm.tsx
+src/components/hr/ApprovalQueue.tsx
+src/components/hr/QrScannerView.tsx
+src/components/hr/UserQrDialog.tsx
+```
+
+Update:
+- `src/lib/hubSections.ts` (attivo hr, aggiungo `HR_SECTION_PATHS`).
+- `src/App.tsx` (5 nuove route con `<ProtectedRoute allowedRoles={["ADMIN","PM"]}>`; `/hr/scanner` solo `["ADMIN"]`).
+
+## Note
+
+- UI in inglese, design Apple/glassmorphism coerente col resto.
+- Date con `date-fns`.
+- Niente `as any`, tipi in `src/types/custom-tables.ts`.
+- Lo scanner del progetto allegato gira in locale standalone; qui ne riuso solo la **logica QR**, salvando i timbri direttamente in Supabase (no `database.json`, no server Node separato).
