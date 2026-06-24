@@ -5707,7 +5707,14 @@ export type Database = {
         | "In_Transit"
         | "Delivered"
       hr_attendance_status: "auto_qr" | "manual_override"
-      hr_availability_status: "available" | "busy" | "off" | "travel" | "remote"
+      hr_availability_status:
+        | "office"
+        | "unavailable"
+        | "vacation"
+        | "travel"
+        | "smart_working"
+        | "permit"
+        | "sick"
       hr_request_status: "pending" | "approved" | "rejected"
       hr_request_type: "holiday" | "permit" | "travel"
       milestone_category: "scorecard" | "timeline"
@@ -5886,7 +5893,15 @@ export const Constants = {
         "Delivered",
       ],
       hr_attendance_status: ["auto_qr", "manual_override"],
-      hr_availability_status: ["available", "busy", "off", "travel", "remote"],
+      hr_availability_status: [
+        "office",
+        "unavailable",
+        "vacation",
+        "travel",
+        "smart_working",
+        "permit",
+        "sick",
+      ],
       hr_request_status: ["pending", "approved", "rejected"],
       hr_request_type: ["holiday", "permit", "travel"],
       milestone_category: ["scorecard", "timeline"],

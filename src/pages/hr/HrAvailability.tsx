@@ -27,18 +27,31 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_LABEL: Record<AvailabilityStatus, string> = {
-  available: "Available",
-  busy: "Busy",
-  off: "Off / Holiday",
-  travel: "Travel",
-  remote: "Remote",
+  office: "Office",
+  smart_working: "Smart working",
+  unavailable: "Unavailable",
+  travel: "Business Travel",
+  vacation: "Vacation / Holiday",
+  permit: "Permit",
+  sick: "Sick leave",
+};
+const STATUS_SHORT: Record<AvailabilityStatus, string> = {
+  office: "O",
+  smart_working: "S",
+  unavailable: "U",
+  travel: "T",
+  vacation: "V",
+  permit: "Pp",
+  sick: "M",
 };
 const STATUS_COLOR: Record<AvailabilityStatus, string> = {
-  available: "#34D399",
-  busy: "#F59E0B",
-  off: "#EF4444",
-  travel: "#8B5CF6",
-  remote: "#38BDF8",
+  office: "#FBBF24",       // amber
+  smart_working: "#5EEAD4", // teal
+  unavailable: "#A78BFA",   // violet
+  travel: "#F9A8D4",        // pink
+  vacation: "#34D399",      // green
+  permit: "#60A5FA",        // blue
+  sick: "#FB923C",          // orange
 };
 
 export default function HrAvailability() {
@@ -128,12 +141,14 @@ export default function HrAvailability() {
                           <button
                             type="button"
                             disabled={!editable}
-                            title={cell?.note ?? ""}
-                            className={`w-7 h-7 rounded transition-all ${
+                            title={cell ? `${STATUS_LABEL[cell.status]}${cell.note ? ` — ${cell.note}` : ""}` : ""}
+                            className={`w-7 h-7 rounded text-[10px] font-semibold text-foreground/80 flex items-center justify-center transition-all ${
                               editable ? "cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-primary/40" : "cursor-not-allowed opacity-60"
                             }`}
                             style={{ background: cell ? STATUS_COLOR[cell.status] : "hsl(var(--muted))" }}
-                          />
+                          >
+                            {cell ? STATUS_SHORT[cell.status] : ""}
+                          </button>
                         </PopoverTrigger>
                         {editable && (
                           <PopoverContent className="w-72 p-3 pointer-events-auto" align="center">
@@ -203,7 +218,7 @@ function CellEditor({
   }) => void;
   onDelete?: () => void;
 }) {
-  const [status, setStatus] = useState<AvailabilityStatus>(cell?.status ?? "available");
+  const [status, setStatus] = useState<AvailabilityStatus>(cell?.status ?? "office");
   const [note, setNote] = useState(cell?.note ?? "");
   const [hours, setHours] = useState<string>(cell?.hours_planned?.toString() ?? "");
 

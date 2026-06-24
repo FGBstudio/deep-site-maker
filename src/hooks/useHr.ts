@@ -2,7 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
-export type AvailabilityStatus = "available" | "busy" | "off" | "travel" | "remote";
+export type AvailabilityStatus =
+  | "office"
+  | "smart_working"
+  | "unavailable"
+  | "travel"
+  | "vacation"
+  | "permit"
+  | "sick";
 export type RequestType = "holiday" | "permit" | "travel";
 export type RequestStatus = "pending" | "approved" | "rejected";
 export type AttendanceStatus = "auto_qr" | "manual_override";
