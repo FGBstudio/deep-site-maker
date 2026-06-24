@@ -141,12 +141,14 @@ export default function HrAvailability() {
                           <button
                             type="button"
                             disabled={!editable}
-                            title={cell?.note ?? ""}
-                            className={`w-7 h-7 rounded transition-all ${
+                            title={cell ? `${STATUS_LABEL[cell.status]}${cell.note ? ` — ${cell.note}` : ""}` : ""}
+                            className={`w-7 h-7 rounded text-[10px] font-semibold text-foreground/80 flex items-center justify-center transition-all ${
                               editable ? "cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-primary/40" : "cursor-not-allowed opacity-60"
                             }`}
                             style={{ background: cell ? STATUS_COLOR[cell.status] : "hsl(var(--muted))" }}
-                          />
+                          >
+                            {cell ? STATUS_SHORT[cell.status] : ""}
+                          </button>
                         </PopoverTrigger>
                         {editable && (
                           <PopoverContent className="w-72 p-3 pointer-events-auto" align="center">
