@@ -169,7 +169,7 @@ export default function ProjectCreateWizard() {
           .insert({
             name: draft.project_name.trim(),
             client: draft.client.trim(),
-            region: draft.region,
+            region: siteRegion,
             handover_date: draft.handover_date,
             status: "in_progress",
             pm_id: pmId,
