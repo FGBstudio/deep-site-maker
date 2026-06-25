@@ -167,7 +167,9 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
           status: "Design", pm_id: isAdmin ? "" : user?.id || "", site_id: "", 
           allocations: [], certifications: [] 
         });
-        setSelectedHoldingId(""); setSelectedBrandId(""); setShowNewSite(false); setNewSiteName("");
+        setSelectedHoldingId(""); setSelectedBrandId(""); setShowNewSite(false);
+        setNewSiteName(""); setNewSiteCity(""); setNewSiteCountry("");
+        setNewSiteRegion("Europe"); setNewSiteAddress(""); setNewSiteTimezone("Europe/Rome");
       }
       setDataLoaded(true);
     };
@@ -175,8 +177,12 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
     loadProjectData();
   }, [open, project, existingAllocations, form, isAdmin, user]);
 
-  const handleHoldingChange = (val: string) => { setSelectedHoldingId(val); setSelectedBrandId(""); form.setValue("site_id", ""); setShowNewSite(false); setNewSiteName(""); };
-  const handleBrandChange = (val: string) => { setSelectedBrandId(val); form.setValue("site_id", ""); setShowNewSite(false); setNewSiteName(""); };
+  const resetNewSite = () => {
+    setNewSiteName(""); setNewSiteCity(""); setNewSiteCountry("");
+    setNewSiteRegion("Europe"); setNewSiteAddress(""); setNewSiteTimezone("Europe/Rome");
+  };
+  const handleHoldingChange = (val: string) => { setSelectedHoldingId(val); setSelectedBrandId(""); form.setValue("site_id", ""); setShowNewSite(false); resetNewSite(); };
+  const handleBrandChange = (val: string) => { setSelectedBrandId(val); form.setValue("site_id", ""); setShowNewSite(false); resetNewSite(); };
 
   const onSubmit = async (data: ProjectFormData) => {
     setSaving(true);
@@ -185,11 +191,27 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
       const handoverStr = format(data.handover_date, "yyyy-MM-dd");
 
       let siteId = data.site_id || null;
+      let effectiveRegion: string = data.region;
       if (showNewSite && newSiteName.trim()) {
         if (!selectedBrandId) throw new Error("Select a Brand before creating a new Site.");
-        const { data: newSite, error: siteErr } = await supabase.from("sites").insert({ name: newSiteName.trim(), brand_id: selectedBrandId } as any).select("id").single();
+        if (!newSiteCity.trim()) throw new Error("City is required for a new site.");
+        if (!newSiteCountry.trim()) throw new Error("Country is required for a new site.");
+        const { data: newSite, error: siteErr } = await supabase.from("sites").insert({
+          name: newSiteName.trim(),
+          brand_id: selectedBrandId,
+          city: newSiteCity.trim(),
+          country: newSiteCountry.trim(),
+          region: newSiteRegion,
+          address: newSiteAddress.trim() || null,
+          timezone: newSiteTimezone.trim() || "Europe/Rome",
+        } as any).select("id, region").single();
         if (siteErr) throw siteErr;
         siteId = newSite.id;
+        effectiveRegion = newSite.region || newSiteRegion;
+      } else if (siteId) {
+        // Derive region from the selected existing site to keep certifications in sync
+        const { data: existingSite } = await supabase.from("sites").select("region").eq("id", siteId).maybeSingle();
+        if (existingSite?.region) effectiveRegion = existingSite.region;
       }
 
       // Business fields are now stored directly on each certification row (no projects table).
