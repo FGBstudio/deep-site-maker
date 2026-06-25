@@ -517,7 +517,6 @@ function StepSite({ draft, updateDraft, errors, holdings, brands, sites, loading
           </Card>
         );
       })()}
-      )}
     </div>
   );
 }
