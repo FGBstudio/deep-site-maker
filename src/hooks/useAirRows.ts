@@ -10,6 +10,7 @@ export interface AirDevice {
 
 export interface AirMonitorRow {
   id: string; // site_id
+  certification_id: string | null;
   project_name: string;
   pm_name: string | null;
   region: string | null;
@@ -20,6 +21,9 @@ export interface AirMonitorRow {
   po_numbers: string[];
   online_status: string | null;
   notes: string | null;
+  handover_date: string | null;
+  latest_shipment_date: string | null;
+  brand_name: string | null;
   // Financials
   inbound_cost: number;
   outbound_cost: number;
@@ -53,6 +57,7 @@ export function useAirRows() {
           online_status,
           project_name,
           pm_id,
+          notes,
           inbound_cost,
           outbound_cost,
           internal_cost,
@@ -71,7 +76,8 @@ export function useAirRows() {
             name,
             country,
             region,
-            city
+            city,
+            brand_id
           ),
           profiles:pm_id (
             display_name,
@@ -84,9 +90,19 @@ export function useAirRows() {
       if (error) throw error;
       if (!data) return [];
 
+      const { data: brandsData } = await supabase
+        .from("brands")
+        .select("id, name");
+
+      const brandsMap = new Map<string, string>();
+      if (brandsData) {
+        brandsData.forEach(b => brandsMap.set(b.id, b.name));
+      }
+
       return data.map((record: any) => {
         const site = Array.isArray(record.sites) ? record.sites[0] : record.sites;
         const pm = Array.isArray(record.profiles) ? record.profiles[0] : record.profiles;
+        const brandName = site?.brand_id ? (brandsMap.get(site.brand_id) || null) : null;
 
         return {
           id: record.site_id,
@@ -100,6 +116,7 @@ export function useAirRows() {
           po_numbers: record.po_numbers ?? [],
           handover_date: record.handover_date ?? null,
           latest_shipment_date: record.latest_shipment_date ?? null,
+          brand_name: brandName,
           online_status: record.online_status ?? null,
           notes: record.notes ?? null,
           inbound_cost: record.inbound_cost ?? 0,
