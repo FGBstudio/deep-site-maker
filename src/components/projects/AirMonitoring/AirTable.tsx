@@ -7,7 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { 
   Download, Clock, Calendar, Package, 
   Loader2, User, Activity, Monitor,
-  ArrowUp, ArrowDown, ArrowUpDown, Filter, Search, CheckCircle2
+  ArrowUp, ArrowDown, ArrowUpDown, Filter, Search, CheckCircle2,
+  AlertTriangle, Briefcase, Cpu, Coins, TrendingUp
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,7 @@ const DeviceModalContent = ({ siteId, projectName }: { siteId: string, projectNa
           </div>
         </div>
       ))}
-      {!devices?.length && <p className="col-span-2 text-center py-10 text-slate-400 text-sm italic">No devices found.</p>}
+      {!devices?.length && <p className="col-span-2 text-center py-10 text-slate-400 text-sm italic font-medium">No devices assigned yet — sensors are requested only</p>}
     </div>
   );
 };
@@ -92,6 +93,7 @@ function getUniqueValues(colKey: string, rows: any[]): string[] {
     }
     else if (colKey === 'region') val = r.region || '(Blanks)';
     else if (colKey === 'country') val = r.country || '(Blanks)';
+    else if (colKey === 'brand_name') val = r.brand_name || '(Blanks)';
     else if (colKey === 'status') val = getSelectStatus(r.status);
     else if (colKey === 'notes') val = r.notes || '(Blanks)';
     else if (colKey === 'quotation_value') val = `€${(r.quotation_value ?? 0).toLocaleString()}`;
@@ -120,6 +122,7 @@ function matchRowValue(r: any, colKey: string, selectedValues: string[] | null |
   else if (colKey === 'pm_name') val = r.pm_name || '(Blanks)';
   else if (colKey === 'region') val = r.region || '(Blanks)';
   else if (colKey === 'country') val = r.country || '(Blanks)';
+  else if (colKey === 'brand_name') val = r.brand_name || '(Blanks)';
   else if (colKey === 'total_sensors') val = String(r.total_sensors ?? 0);
   else if (colKey === 'po_numbers') {
     if (r.po_numbers && r.po_numbers.length > 0) {
@@ -329,10 +332,27 @@ export function AirTable() {
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [showFinancials, setShowFinancials] = useState(true);
 
-  const uniques = useMemo(() => ({
-    regions: Array.from(new Set(rows.map(r => r.region).filter(Boolean))).sort() as string[],
-    countries: Array.from(new Set(rows.map(r => r.country).filter(Boolean))).sort() as string[],
-  }), [rows]);
+  // Compute all portfolio metrics from full `rows` dataset (independent of filters)
+  const stats = useMemo(() => {
+    const totalProjects = rows.length;
+    let totalDelivered = 0;
+    let totalUpcoming = 0;
+    let totalAssigned = 0;
+
+    rows.forEach(r => {
+      const norm = getSelectStatus(r.status);
+      if (norm === 'Delivered') totalDelivered++;
+      else if (norm === 'Assigned') totalAssigned++;
+      else totalUpcoming++;
+    });
+    
+    return {
+      totalProjects,
+      totalDelivered,
+      totalUpcoming,
+      totalAssigned
+    };
+  }, [rows]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -352,6 +372,7 @@ export function AirTable() {
           else if (colKey === 'notes') val = r.notes || '';
           else if (colKey === 'handover_date') val = r.handover_date ? format(new Date(r.handover_date), "MMM d, yy") : '';
           else if (colKey === 'latest_shipment_date') val = r.latest_shipment_date ? format(new Date(r.latest_shipment_date), "MMM d, yy") : '';
+          else if (colKey === 'brand_name') val = r.brand_name || '';
 
           if (!val.toLowerCase().includes(filter.search.toLowerCase())) {
             return false;
@@ -474,6 +495,8 @@ export function AirTable() {
             if (errShip) throw errShip;
           }
         }
+      } else {
+        throw new Error(`Unsupported field update: ${field}`);
       }
 
       toast({ title: "Saved", description: `${record.project_name ?? "Record"} updated successfully.` });
@@ -485,13 +508,36 @@ export function AirTable() {
     }
   };
 
+  const totalCols = 11 + (showFinancials ? 6 : 0);
+
+  const visibleStats = useMemo(() => {
+    const totalSensors = sortedAndFiltered.reduce((sum, r) => sum + (r.total_sensors ?? 0), 0);
+    const quotation = sortedAndFiltered.reduce((sum, r) => sum + (r.quotation_value ?? 0), 0);
+    const hwCost = sortedAndFiltered.reduce((sum, r) => sum + (r.hardware_cost ?? 0), 0);
+    const shipping = sortedAndFiltered.reduce((sum, r) => sum + ((r.inbound_cost ?? 0) + (r.outbound_cost ?? 0) + (r.internal_cost ?? 0)), 0);
+    const taxVat = sortedAndFiltered.reduce((sum, r) => sum + ((r.customs_cost ?? 0) + (r.vat_cost ?? 0)), 0);
+    const profit = sortedAndFiltered.reduce((sum, r) => sum + (r.profit ?? 0), 0);
+    const roi = quotation > 0 ? (profit / quotation) * 100 : 0;
+
+    return {
+      totalSensors,
+      quotation,
+      hwCost,
+      shipping,
+      taxVat,
+      profit,
+      roi
+    };
+  }, [sortedAndFiltered]);
+
   const exportCSV = () => {
     if (!sortedAndFiltered.length) return;
-    const headers = ["Project", "Status", "PM", "Region", "Country", "City", "Sensors", "POs", "Notes"];
+    const headers = ["Project", "Brand", "Status", "PM", "Region", "Country", "City", "Sensors", "POs", "Quotation", "HW Cost", "Total Cost", "Profit", "ROI", "Notes"];
     const lines = [
       headers.join(","),
       ...sortedAndFiltered.map((r) => [
         JSON.stringify(r.project_name ?? ""),
+        JSON.stringify(r.brand_name ?? ""),
         JSON.stringify(r.status ?? ""),
         JSON.stringify(r.pm_name ?? ""),
         JSON.stringify(r.region ?? ""),
@@ -518,14 +564,90 @@ export function AirTable() {
 
   return (
     <div className="space-y-5 max-w-[1600px] mx-auto">
+      {/* Portfolio Insights Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Projects */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow duration-200">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Projects</span>
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+              <Briefcase className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <h3 className="text-2xl font-bold text-slate-800">{stats.totalProjects}</h3>
+            <p className="text-[10px] text-slate-400 mt-1 font-medium">Across all regions</p>
+          </div>
+        </div>
+
+        {/* Total Delivered */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow duration-200">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Delivered</span>
+            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <h3 className="text-2xl font-bold text-slate-800">{stats.totalDelivered}</h3>
+            <p className="text-[10px] text-slate-400 mt-1 font-medium">Completed / Installed</p>
+          </div>
+        </div>
+
+        {/* Total Upcoming */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow duration-200">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Upcoming</span>
+            <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
+              <Clock className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <h3 className="text-2xl font-bold text-slate-800">{stats.totalUpcoming}</h3>
+            <p className="text-[10px] text-slate-400 mt-1 font-medium">In preparation / pending</p>
+          </div>
+        </div>
+
+        {/* Total Assigned */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow duration-200">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Assigned</span>
+            <div className="p-2 bg-sky-50 text-sky-600 rounded-xl">
+              <Package className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <h3 className="text-2xl font-bold text-slate-800">{stats.totalAssigned}</h3>
+            <p className="text-[10px] text-slate-400 mt-1 font-medium">Shipped / In transit</p>
+          </div>
+        </div>
+      </div>
+
       {/* Top action bar */}
-      <div className="flex items-center justify-end gap-3 bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm">
-        <Button variant="outline" size="sm" onClick={() => setShowFinancials(!showFinancials)} className={cn("gap-2 h-10 px-4", showFinancials ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "border-slate-200")}>
-          <Activity className="h-4 w-4" /> {showFinancials ? "Hide Financials" : "Show Financials"}
-        </Button>
-        <Button variant="outline" size="sm" onClick={exportCSV} className="gap-2 h-10 px-4 border-slate-200">
-          <Download className="h-4 w-4" /> Export
-        </Button>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-500 font-medium">
+            Showing <strong className="text-slate-800">{sortedAndFiltered.length}</strong> of <strong className="text-slate-800">{rows.length}</strong> projects
+          </span>
+          {Object.keys(colFilters).some(k => colFilters[k]?.search || colFilters[k]?.selectedValues !== undefined) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setColFilters({})}
+              className="text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/50 h-8 px-2.5 rounded-lg font-semibold"
+            >
+              Clear Filters
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => setShowFinancials(!showFinancials)} className={cn("gap-2 h-10 px-4", showFinancials ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "border-slate-200")}>
+            <Activity className="h-4 w-4" /> {showFinancials ? "Hide Financials" : "Show Financials"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportCSV} className="gap-2 h-10 px-4 border-slate-200">
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -536,10 +658,22 @@ export function AirTable() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
+                {/* Row 1: Grouped headers */}
+                <tr>
+                  <th className="bg-slate-50/80 border-b border-slate-200 sticky left-0 z-20 min-w-[320px] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]" />
+                  <th colSpan={8} className="bg-slate-50/80 border-b border-slate-200" />
+                  {showFinancials && (
+                    <th colSpan={6} className="bg-indigo-50/50 text-center text-[10px] uppercase font-bold text-indigo-700 border-b border-l border-r border-indigo-100 py-2 tracking-wider">
+                      Financial Overview (€)
+                    </th>
+                  )}
+                  <th colSpan={2} className="bg-slate-50/80 border-b border-slate-200" />
+                </tr>
+                {/* Row 2: Standard Sorting Headers */}
                 <tr className="bg-slate-50/80 border-b border-slate-200">
-                  <th className="px-4 py-3.5 text-left sticky left-0 bg-slate-50/80 z-20 min-w-[320px]">
+                  <th className="px-4 py-3.5 text-left sticky left-0 bg-slate-50/80 z-20 min-w-[320px] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
                     <ExcelHeaderCell 
-                      title="Project & Location" 
+                      title="Project Name" 
                       colKey="project_name" 
                       rows={rows} 
                       colFilters={colFilters} 
@@ -547,6 +681,9 @@ export function AirTable() {
                       sortConfig={sortConfig} 
                       setSortConfig={setSortConfig}
                     />
+                  </th>
+                  <th className="px-4 py-3.5 text-left w-32">
+                    <ExcelHeaderCell title="Brand Name" colKey="brand_name" rows={rows} colFilters={colFilters} setColFilters={setColFilters} sortConfig={sortConfig} setSortConfig={setSortConfig} />
                   </th>
                   <th className="px-4 py-3.5 text-left w-28">
                     <ExcelHeaderCell title="Region" colKey="region" rows={rows} colFilters={colFilters} setColFilters={setColFilters} sortConfig={sortConfig} setSortConfig={setSortConfig} />
@@ -600,10 +737,67 @@ export function AirTable() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {sortedAndFiltered.map((r, i) => (
-                  <AirRow key={r.id} r={r} idx={i} onUpdate={updateField} showFinancials={showFinancials} />
-                ))}
+                {sortedAndFiltered.length > 0 ? (
+                  sortedAndFiltered.map((r, i) => (
+                    <AirRow key={r.id} r={r} idx={i} onUpdate={updateField} showFinancials={showFinancials} />
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={totalCols} className="py-16 text-center">
+                      <div className="max-w-md mx-auto flex flex-col items-center gap-3 p-6 bg-slate-50/50 rounded-2xl border border-slate-200/60">
+                        <div className="p-3 bg-slate-100 text-slate-400 rounded-full">
+                          <Filter className="w-6 h-6" />
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-700 mt-1">No Projects Found</h4>
+                        <p className="text-xs text-slate-500">No projects match the selected filters. Try clearing some of your filters to see more results.</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setColFilters({})}
+                          className="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/50 border-indigo-200"
+                        >
+                          Clear All Filters
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
               </tbody>
+              <tfoot className="border-t-2 border-slate-300 font-bold bg-slate-50/50 sticky bottom-0 z-20">
+                <tr>
+                  <td className="px-4 py-3.5 text-left sticky left-0 bg-slate-100 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                    <span className="text-xs uppercase tracking-wider font-bold text-slate-700">Total Filtered</span>
+                  </td>
+                  <td className="px-4 py-3.5" /> {/* Brand Name */}
+                  <td className="px-4 py-3.5" /> {/* Region */}
+                  <td className="px-4 py-3.5" /> {/* Country */}
+                  <td className="px-4 py-3.5" /> {/* PM */}
+                  <td className="px-4 py-3.5 text-center">
+                    <span className="text-xs font-bold text-indigo-700 bg-indigo-50/80 px-2.5 py-1 rounded-lg border border-indigo-100">
+                      {visibleStats.totalSensors}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3.5" /> {/* POs */}
+                  <td className="px-4 py-3.5" /> {/* Handover Date */}
+                  <td className="px-4 py-3.5" /> {/* Shipment Date */}
+                  {showFinancials && (
+                    <>
+                      <td className="px-4 py-3.5 text-right text-xs font-bold text-indigo-600">€{visibleStats.quotation.toLocaleString()}</td>
+                      <td className="px-4 py-3.5 text-right text-xs font-bold text-slate-600">€{visibleStats.hwCost.toLocaleString()}</td>
+                      <td className="px-4 py-3.5 text-right text-xs font-bold text-slate-600">€{visibleStats.shipping.toLocaleString()}</td>
+                      <td className="px-4 py-3.5 text-right text-xs font-bold text-slate-600">€{visibleStats.taxVat.toLocaleString()}</td>
+                      <td className={cn("px-4 py-3.5 text-right text-xs font-bold", visibleStats.profit >= 0 ? "text-emerald-600" : "text-rose-600")}>€{visibleStats.profit.toLocaleString()}</td>
+                      <td className="px-4 py-3.5 text-center">
+                        <Badge variant="outline" className={cn("text-[10px] font-bold h-5 px-1.5", visibleStats.roi >= 20 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600")}>
+                          {Math.round(visibleStats.roi)}%
+                        </Badge>
+                      </td>
+                    </>
+                  )}
+                  <td className="px-4 py-3.5" /> {/* Status */}
+                  <td className="px-4 py-3.5" /> {/* Notes */}
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -612,9 +806,22 @@ export function AirTable() {
   );
 }
 
-// (getSelectStatus moved to top of file)
-
-function AirRow({ r, idx, onUpdate, showFinancials }: { r: AirMonitorRow & any; idx: number; onUpdate: any; showFinancials: boolean; }) {
+function AirRow({
+  r,
+  idx,
+  onUpdate,
+  showFinancials
+}: {
+  r: AirMonitorRow;
+  idx: number;
+  onUpdate: (
+    siteId: string,
+    field: 'handover_date' | 'latest_shipment_date' | 'status' | 'notes',
+    value: any,
+    record: AirMonitorRow
+  ) => Promise<boolean>;
+  showFinancials: boolean;
+}) {
   const [isEditingHandover, setIsEditingHandover] = useState(false);
   const [isEditingShipment, setIsEditingShipment] = useState(false);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
@@ -622,14 +829,45 @@ function AirRow({ r, idx, onUpdate, showFinancials }: { r: AirMonitorRow & any; 
   const isEven = idx % 2 === 0;
   const baseBg = isEven ? "bg-white" : "bg-slate-50";
 
+  const normStatus = getSelectStatus(r.status);
+  const statusBorderColor = normStatus === 'Delivered' 
+    ? 'border-l-emerald-500' 
+    : normStatus === 'Assigned' 
+      ? 'border-l-sky-500' 
+      : 'border-l-amber-500';
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isOverdue = r.handover_date && new Date(r.handover_date) < today && normStatus !== 'Delivered';
+
   return (
     <tr className={cn("group transition-colors duration-150", baseBg, "hover:bg-slate-100/50")}>
       {/* 1. Project & Location */}
-      <td className={cn("px-4 py-4 font-semibold text-slate-800 sticky left-0 z-10", isEven ? "bg-white" : "bg-slate-50", "group-hover:bg-slate-100 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]")}>
-        <div className="flex flex-col">
-          <span className="text-sm font-bold tracking-tight">{r.project_name}</span>
-          <span className="text-[10px] text-slate-400 font-normal mt-0.5">{r.city || <span className="text-slate-300 italic">No City</span>}</span>
+      <td className={cn(
+        "px-4 py-4 font-semibold text-slate-800 sticky left-0 z-10 border-l-[3.5px]",
+        statusBorderColor,
+        isEven ? "bg-white" : "bg-slate-50",
+        "group-hover:bg-slate-100 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]"
+      )}>
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "w-2 h-2 rounded-full shrink-0",
+            r.online_status === 'Online' 
+              ? 'bg-emerald-500' 
+              : r.online_status === 'Offline' 
+                ? 'bg-rose-500' 
+                : 'bg-slate-300'
+          )} title={r.online_status || 'Pending'} />
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-bold tracking-tight truncate">{r.project_name}</span>
+            <span className="text-[10px] text-slate-400 font-normal mt-0.5">{r.city || <span className="text-slate-300 italic">No City</span>}</span>
+          </div>
         </div>
+      </td>
+
+      {/* 1a. Brand Name */}
+      <td className="px-4 py-4 text-xs text-slate-600 font-medium">
+        {r.brand_name || <span className="text-slate-300 italic">—</span>}
       </td>
 
       {/* 1b. Region */}
@@ -656,8 +894,15 @@ function AirRow({ r, idx, onUpdate, showFinancials }: { r: AirMonitorRow & any; 
       <td className="px-4 py-4 text-center">
         <Dialog>
           <DialogTrigger asChild>
-            <button className={cn("inline-flex items-center justify-center min-w-[2.2rem] h-8 px-2.5 rounded-lg text-xs font-bold transition-all shadow-sm", r.total_sensors > 0 ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 ring-1 ring-indigo-100" : "bg-slate-100 text-slate-500")}>
-              {r.total_sensors}
+            <button className={cn(
+              "inline-flex items-center justify-center min-w-[2.2rem] h-8 px-2.5 rounded-lg text-xs font-bold transition-all shadow-sm",
+              normStatus === 'Upcoming'
+                ? "bg-amber-50/40 text-amber-700 hover:bg-amber-100/50 border border-dashed border-amber-300"
+                : r.total_sensors > 0
+                  ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 ring-1 ring-indigo-100"
+                  : "bg-slate-100 text-slate-500"
+            )}>
+              {normStatus === 'Upcoming' ? `~${r.total_sensors}` : r.total_sensors}
             </button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-xl border-none shadow-2xl rounded-2xl overflow-hidden">
@@ -707,7 +952,11 @@ function AirRow({ r, idx, onUpdate, showFinancials }: { r: AirMonitorRow & any; 
           className="px-4 py-4 whitespace-nowrap cursor-pointer hover:bg-slate-50/50" 
           onClick={() => setIsEditingHandover(true)}
         >
-          <span className="text-xs text-slate-600 font-medium">
+          <span className={cn(
+            "text-xs font-medium inline-flex items-center gap-1.5",
+            isOverdue ? "text-rose-600 font-semibold" : "text-slate-600"
+          )}>
+            {isOverdue && <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-500" />}
             {r.handover_date ? format(new Date(r.handover_date), "MMM d, yy") : <span className="text-slate-300 italic">No date</span>}
           </span>
         </td>
@@ -794,13 +1043,9 @@ function AirRow({ r, idx, onUpdate, showFinancials }: { r: AirMonitorRow & any; 
                 await onUpdate(r.id, 'notes', newVal || null, r);
               }
             }}
-            onKeyDown={async (e) => {
+            onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                setIsEditingNotes(false);
-                const newVal = (e.target as HTMLInputElement).value;
-                if (newVal !== (r.notes ?? '')) {
-                  await onUpdate(r.id, 'notes', newVal || null, r);
-                }
+                (e.target as HTMLInputElement).blur();
               }
             }}
             className="h-8 text-xs bg-white focus-visible:ring-indigo-500/20"
