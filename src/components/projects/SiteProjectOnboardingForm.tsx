@@ -233,7 +233,7 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
           ...certPayload,
           name: data.certifications.length > 1 ? `${data.name} - ${certConf.cert_type}` : data.name,
           client: data.client,
-          region: data.region,
+          region: effectiveRegion,
           handover_date: handoverStr,
           status: data.status || "in_progress",
           pm_id: pmId || null,
