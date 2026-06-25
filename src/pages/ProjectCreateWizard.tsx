@@ -112,8 +112,10 @@ export default function ProjectCreateWizard() {
 
     setSubmitting(true);
     try {
-      // 1. Create or use existing site
+      // 1. Create new site, or optionally complete an existing one
       let siteId = draft.site_id;
+      let siteRegion = draft.region;
+      let siteTimezone = draft.timezone;
       if (draft.create_new_site) {
         const { data: newSite, error: siteErr } = await supabase
           .from("sites")
@@ -132,10 +134,29 @@ export default function ProjectCreateWizard() {
             module_air_enabled: draft.module_air_enabled,
             module_water_enabled: draft.module_water_enabled,
           } as any)
-          .select("id")
+          .select("id, region, timezone")
           .single();
         if (siteErr) throw siteErr;
         siteId = newSite.id;
+        siteRegion = newSite.region || draft.region;
+        siteTimezone = newSite.timezone || draft.timezone;
+      } else if (siteId) {
+        // Read site's authoritative region/timezone, and patch any fields the user filled in to complete a partial site
+        const { data: existingSite } = await supabase
+          .from("sites")
+          .select("region, timezone, city, country, address")
+          .eq("id", siteId)
+          .maybeSingle();
+        const patch: Record<string, any> = {};
+        if (existingSite && !existingSite.city && draft.city?.trim()) patch.city = draft.city.trim();
+        if (existingSite && !existingSite.country && draft.country?.trim()) patch.country = draft.country.trim();
+        if (existingSite && !existingSite.address && draft.address?.trim()) patch.address = draft.address.trim();
+        if (existingSite && (!existingSite.region || existingSite.region === "") && draft.region) patch.region = draft.region;
+        if (Object.keys(patch).length > 0) {
+          await supabase.from("sites").update(patch as any).eq("id", siteId);
+        }
+        siteRegion = patch.region || existingSite?.region || draft.region;
+        siteTimezone = existingSite?.timezone || draft.timezone;
       }
 
       const certs = draft.certifications;
