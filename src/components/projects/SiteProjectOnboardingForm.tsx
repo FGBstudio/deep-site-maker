@@ -87,6 +87,11 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
   const [showNewSite, setShowNewSite] = useState(false);
   const [newSiteName, setNewSiteName] = useState("");
+  const [newSiteCity, setNewSiteCity] = useState("");
+  const [newSiteCountry, setNewSiteCountry] = useState("");
+  const [newSiteRegion, setNewSiteRegion] = useState<string>("Europe");
+  const [newSiteAddress, setNewSiteAddress] = useState("");
+  const [newSiteTimezone, setNewSiteTimezone] = useState("Europe/Rome");
 
   const { data: holdings = [], isLoading: loadingHoldings } = useHoldings();
   const { data: brands = [], isLoading: loadingBrands } = useBrands(selectedHoldingId || undefined);
@@ -162,7 +167,9 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
           status: "Design", pm_id: isAdmin ? "" : user?.id || "", site_id: "", 
           allocations: [], certifications: [] 
         });
-        setSelectedHoldingId(""); setSelectedBrandId(""); setShowNewSite(false); setNewSiteName("");
+        setSelectedHoldingId(""); setSelectedBrandId(""); setShowNewSite(false);
+        setNewSiteName(""); setNewSiteCity(""); setNewSiteCountry("");
+        setNewSiteRegion("Europe"); setNewSiteAddress(""); setNewSiteTimezone("Europe/Rome");
       }
       setDataLoaded(true);
     };
@@ -170,8 +177,12 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
     loadProjectData();
   }, [open, project, existingAllocations, form, isAdmin, user]);
 
-  const handleHoldingChange = (val: string) => { setSelectedHoldingId(val); setSelectedBrandId(""); form.setValue("site_id", ""); setShowNewSite(false); setNewSiteName(""); };
-  const handleBrandChange = (val: string) => { setSelectedBrandId(val); form.setValue("site_id", ""); setShowNewSite(false); setNewSiteName(""); };
+  const resetNewSite = () => {
+    setNewSiteName(""); setNewSiteCity(""); setNewSiteCountry("");
+    setNewSiteRegion("Europe"); setNewSiteAddress(""); setNewSiteTimezone("Europe/Rome");
+  };
+  const handleHoldingChange = (val: string) => { setSelectedHoldingId(val); setSelectedBrandId(""); form.setValue("site_id", ""); setShowNewSite(false); resetNewSite(); };
+  const handleBrandChange = (val: string) => { setSelectedBrandId(val); form.setValue("site_id", ""); setShowNewSite(false); resetNewSite(); };
 
   const onSubmit = async (data: ProjectFormData) => {
     setSaving(true);
@@ -180,11 +191,27 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
       const handoverStr = format(data.handover_date, "yyyy-MM-dd");
 
       let siteId = data.site_id || null;
+      let effectiveRegion: string = data.region;
       if (showNewSite && newSiteName.trim()) {
         if (!selectedBrandId) throw new Error("Select a Brand before creating a new Site.");
-        const { data: newSite, error: siteErr } = await supabase.from("sites").insert({ name: newSiteName.trim(), brand_id: selectedBrandId } as any).select("id").single();
+        if (!newSiteCity.trim()) throw new Error("City is required for a new site.");
+        if (!newSiteCountry.trim()) throw new Error("Country is required for a new site.");
+        const { data: newSite, error: siteErr } = await supabase.from("sites").insert({
+          name: newSiteName.trim(),
+          brand_id: selectedBrandId,
+          city: newSiteCity.trim(),
+          country: newSiteCountry.trim(),
+          region: newSiteRegion,
+          address: newSiteAddress.trim() || null,
+          timezone: newSiteTimezone.trim() || "Europe/Rome",
+        } as any).select("id, region").single();
         if (siteErr) throw siteErr;
         siteId = newSite.id;
+        effectiveRegion = newSite.region || newSiteRegion;
+      } else if (siteId) {
+        // Derive region from the selected existing site to keep certifications in sync
+        const { data: existingSite } = await supabase.from("sites").select("region").eq("id", siteId).maybeSingle();
+        if (existingSite?.region) effectiveRegion = existingSite.region;
       }
 
       // Business fields are now stored directly on each certification row (no projects table).
@@ -206,7 +233,7 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
           ...certPayload,
           name: data.certifications.length > 1 ? `${data.name} - ${certConf.cert_type}` : data.name,
           client: data.client,
-          region: data.region,
+          region: effectiveRegion,
           handover_date: handoverStr,
           status: data.status || "in_progress",
           pm_id: pmId || null,
@@ -283,29 +310,59 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
               </CardHeader>
               <CardContent className="space-y-6 pt-6 bg-white">
                 {!project && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-100">
-                    <div className="space-y-2">
-                      <Label>Holding *</Label>
-                      <Select value={selectedHoldingId} onValueChange={handleHoldingChange}><SelectTrigger>{loadingHoldings ? <Loader2 className="h-3 w-3 animate-spin" /> : <SelectValue placeholder="Select holding" />}</SelectTrigger><SelectContent>{holdings.map((h: any) => (<SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>))}</SelectContent></Select>
+                  <div className="space-y-4 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Holding *</Label>
+                        <Select value={selectedHoldingId} onValueChange={handleHoldingChange}><SelectTrigger>{loadingHoldings ? <Loader2 className="h-3 w-3 animate-spin" /> : <SelectValue placeholder="Select holding" />}</SelectTrigger><SelectContent>{holdings.map((h: any) => (<SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>))}</SelectContent></Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Brand *</Label>
+                        <Select value={selectedBrandId} onValueChange={handleBrandChange} disabled={!selectedHoldingId}><SelectTrigger>{loadingBrands && selectedHoldingId ? <Loader2 className="h-3 w-3 animate-spin" /> : <SelectValue placeholder="Select brand" />}</SelectTrigger><SelectContent>{brands.map((b: any) => (<SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>))}</SelectContent></Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Site *</Label>
+                        {showNewSite ? (
+                          <div className="flex gap-2"><Input placeholder="New site name..." value={newSiteName} onChange={(e) => setNewSiteName(e.target.value)} className="flex-1" /><Button type="button" variant="outline" size="sm" onClick={() => { setShowNewSite(false); resetNewSite(); }}>X</Button></div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <Controller control={form.control} name="site_id" render={({ field }) => (
+                              <Select value={field.value} onValueChange={field.onChange} disabled={!selectedBrandId}><SelectTrigger className="flex-1"><SelectValue placeholder="Select site" /></SelectTrigger><SelectContent>{sites.map((s: any) => (<SelectItem key={s.id} value={s.id}>{s.name}{s.city ? ` — ${s.city}` : ""}</SelectItem>))}</SelectContent></Select>
+                            )} />
+                            <Button type="button" variant="outline" size="sm" onClick={() => setShowNewSite(true)} disabled={!selectedBrandId}><Plus className="h-3 w-3" /></Button>
+                          </div>
+                        )}
+                        {form.formState.errors.site_id && <p className="text-xs text-destructive">Site required</p>}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Brand *</Label>
-                      <Select value={selectedBrandId} onValueChange={handleBrandChange} disabled={!selectedHoldingId}><SelectTrigger>{loadingBrands && selectedHoldingId ? <Loader2 className="h-3 w-3 animate-spin" /> : <SelectValue placeholder="Select brand" />}</SelectTrigger><SelectContent>{brands.map((b: any) => (<SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>))}</SelectContent></Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Site *</Label>
-                      {showNewSite ? (
-                        <div className="flex gap-2"><Input placeholder="New site..." value={newSiteName} onChange={(e) => setNewSiteName(e.target.value)} className="flex-1" /><Button type="button" variant="outline" size="sm" onClick={() => setShowNewSite(false)}>X</Button></div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <Controller control={form.control} name="site_id" render={({ field }) => (
-                            <Select value={field.value} onValueChange={field.onChange} disabled={!selectedBrandId}><SelectTrigger className="flex-1"><SelectValue placeholder="Select site" /></SelectTrigger><SelectContent>{sites.map((s: any) => (<SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>))}</SelectContent></Select>
-                          )} />
-                          <Button type="button" variant="outline" size="sm" onClick={() => setShowNewSite(true)} disabled={!selectedBrandId}><Plus className="h-3 w-3" /></Button>
+
+                    {showNewSite && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-slate-200">
+                        <div className="space-y-1">
+                          <Label className="text-xs">City *</Label>
+                          <Input placeholder="e.g. Milan" value={newSiteCity} onChange={(e) => setNewSiteCity(e.target.value)} />
                         </div>
-                      )}
-                      {form.formState.errors.site_id && <p className="text-xs text-destructive">Site required</p>}
-                    </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Country *</Label>
+                          <Input placeholder="e.g. Italy" value={newSiteCountry} onChange={(e) => setNewSiteCountry(e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Region</Label>
+                          <Select value={newSiteRegion} onValueChange={setNewSiteRegion}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>{REGIONS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1 sm:col-span-2">
+                          <Label className="text-xs">Address</Label>
+                          <Input placeholder="Via Roma 1" value={newSiteAddress} onChange={(e) => setNewSiteAddress(e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Timezone</Label>
+                          <Input placeholder="Europe/Rome" value={newSiteTimezone} onChange={(e) => setNewSiteTimezone(e.target.value)} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

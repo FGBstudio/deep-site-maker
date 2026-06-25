@@ -112,8 +112,10 @@ export default function ProjectCreateWizard() {
 
     setSubmitting(true);
     try {
-      // 1. Create or use existing site
+      // 1. Create new site, or optionally complete an existing one
       let siteId = draft.site_id;
+      let siteRegion = draft.region;
+      let siteTimezone = draft.timezone;
       if (draft.create_new_site) {
         const { data: newSite, error: siteErr } = await supabase
           .from("sites")
@@ -132,10 +134,29 @@ export default function ProjectCreateWizard() {
             module_air_enabled: draft.module_air_enabled,
             module_water_enabled: draft.module_water_enabled,
           } as any)
-          .select("id")
+          .select("id, region, timezone")
           .single();
         if (siteErr) throw siteErr;
         siteId = newSite.id;
+        siteRegion = newSite.region || draft.region;
+        siteTimezone = newSite.timezone || draft.timezone;
+      } else if (siteId) {
+        // Read site's authoritative region/timezone, and patch any fields the user filled in to complete a partial site
+        const { data: existingSite } = await supabase
+          .from("sites")
+          .select("region, timezone, city, country, address")
+          .eq("id", siteId)
+          .maybeSingle();
+        const patch: Record<string, any> = {};
+        if (existingSite && !existingSite.city && draft.city?.trim()) patch.city = draft.city.trim();
+        if (existingSite && !existingSite.country && draft.country?.trim()) patch.country = draft.country.trim();
+        if (existingSite && !existingSite.address && draft.address?.trim()) patch.address = draft.address.trim();
+        if (existingSite && (!existingSite.region || existingSite.region === "") && draft.region) patch.region = draft.region;
+        if (Object.keys(patch).length > 0) {
+          await supabase.from("sites").update(patch as any).eq("id", siteId);
+        }
+        siteRegion = patch.region || existingSite?.region || draft.region;
+        siteTimezone = existingSite?.timezone || draft.timezone;
       }
 
       const certs = draft.certifications;
@@ -148,7 +169,7 @@ export default function ProjectCreateWizard() {
           .insert({
             name: draft.project_name.trim(),
             client: draft.client.trim(),
-            region: draft.region,
+            region: siteRegion,
             handover_date: draft.handover_date,
             status: "in_progress",
             pm_id: pmId,
@@ -169,7 +190,7 @@ export default function ProjectCreateWizard() {
             .insert({
               name: projectName,
               client: draft.client.trim(),
-              region: draft.region,
+              region: siteRegion,
               handover_date: draft.handover_date,
               status: "in_progress",
               pm_id: pmId || null,
@@ -453,6 +474,49 @@ function StepSite({ draft, updateDraft, errors, holdings, brands, sites, loading
           </CardContent>
         </Card>
       )}
+
+      {/* Complete details for selected existing site */}
+      {!draft.create_new_site && draft.site_id && (() => {
+        const selected = sites.find((s: any) => s.id === draft.site_id);
+        if (!selected) return null;
+        const missing = !selected.city || !selected.country || !selected.address || !selected.region;
+        if (!missing) return null;
+        return (
+          <Card className="border-amber-300/50 bg-amber-50/30">
+            <CardContent className="pt-6 space-y-3">
+              <h3 className="font-semibold text-foreground text-sm">Complete site details</h3>
+              <p className="text-xs text-muted-foreground">This site is missing some metadata. Fill it in and we'll save it back to the site.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {!selected.city && (
+                  <FieldWrapper label="City">
+                    <Input value={draft.city} onChange={(e) => updateDraft({ city: e.target.value })} placeholder="e.g. Milan" />
+                  </FieldWrapper>
+                )}
+                {!selected.country && (
+                  <FieldWrapper label="Country">
+                    <Input value={draft.country} onChange={(e) => updateDraft({ country: e.target.value })} placeholder="e.g. Italy" />
+                  </FieldWrapper>
+                )}
+                {!selected.address && (
+                  <FieldWrapper label="Address">
+                    <Input value={draft.address} onChange={(e) => updateDraft({ address: e.target.value })} placeholder="Via Roma 1" />
+                  </FieldWrapper>
+                )}
+                {!selected.region && (
+                  <FieldWrapper label="Region">
+                    <Select value={draft.region} onValueChange={(v) => updateDraft({ region: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {["Europe", "America", "APAC", "ME"].map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </FieldWrapper>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
     </div>
   );
 }
