@@ -87,6 +87,11 @@ export function ProjectFormModal({ open, onOpenChange, project, existingAllocati
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
   const [showNewSite, setShowNewSite] = useState(false);
   const [newSiteName, setNewSiteName] = useState("");
+  const [newSiteCity, setNewSiteCity] = useState("");
+  const [newSiteCountry, setNewSiteCountry] = useState("");
+  const [newSiteRegion, setNewSiteRegion] = useState<string>("Europe");
+  const [newSiteAddress, setNewSiteAddress] = useState("");
+  const [newSiteTimezone, setNewSiteTimezone] = useState("Europe/Rome");
 
   const { data: holdings = [], isLoading: loadingHoldings } = useHoldings();
   const { data: brands = [], isLoading: loadingBrands } = useBrands(selectedHoldingId || undefined);
