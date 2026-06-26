@@ -587,9 +587,7 @@ export default function Projects() {
                   <DropdownMenuItem onClick={exportJSON}>Export as JSON</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button onClick={() => setWizardOpen(true)} className="gap-2">
-                <Plus className="h-4 w-4" /> New
-              </Button>
+
             </div>
           </div>
 
