@@ -4,7 +4,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectFormModal } from "@/components/projects/ProjectFormModal";
-import { NewQuotationWizard } from "@/components/projects/NewQuotationWizard";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,8 +44,6 @@ export default function Projects() {
   const [pmFilter, setPmFilter] = useState("all");
   const [statusTab, setStatusTab] = useState("all");
 
-  // New quotation wizard
-  const [wizardOpen, setWizardOpen] = useState(false);
 
   // Edit / confirm modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -392,11 +390,6 @@ export default function Projects() {
         </TabsContent>
       </Tabs>
 
-      <NewQuotationWizard
-        open={wizardOpen}
-        onOpenChange={setWizardOpen}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: ["admin-planner-all-certifications"] })}
-      />
 
       <ProjectFormModal
         open={modalOpen}
