@@ -463,13 +463,13 @@ export default function Projects() {
   }, [filtered, sortConfig]);
 
   const counts = useMemo(() => ({
-    quotation: allProjects.filter((p) => p.setup_status === "quotation").length,
     da_configurare: allProjects.filter((p) => p.setup_status === "da_configurare").length,
     in_corso: allProjects.filter((p) => p.setup_status === "in_corso").length,
-    completato: allProjects.filter((p) => p.setup_status === "completato").length,
+    completato: allProjects.filter((p) => (p.setup_status as string) === "completato").length,
     certificato: allProjects.filter((p) => p.setup_status === "certificato").length,
-    canceled: allProjects.filter((p) => p.setup_status === "canceled").length,
   }), [allProjects]);
+
+  const operationsTotal = counts.da_configurare + counts.in_corso + counts.completato + counts.certificato;
 
   const openEdit = async (project: AdminPlannerProject) => {
     const { data } = await supabase
@@ -482,25 +482,7 @@ export default function Projects() {
     setModalOpen(true);
   };
 
-  const openConfirm = (project: AdminPlannerProject) => {
-    setEditProject(project as any);
-    setEditAllocations([]);
-    setModalMode("confirm_project" as any);
-    setModalOpen(true);
-  };
 
-  const handleCancel = async (project: AdminPlannerProject) => {
-    const { error } = await supabase
-      .from("certifications")
-      .update({ status: "canceled" } as any)
-      .eq("id", project.id);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Project canceled", description: `${project.name} has been moved to Canceled.` });
-      queryClient.invalidateQueries({ queryKey: ["admin-planner-all-certifications"] });
-    }
-  };
 
 
   if (!isAdmin) {
