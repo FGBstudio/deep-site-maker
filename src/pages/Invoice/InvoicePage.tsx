@@ -67,6 +67,7 @@ export default function InvoicePage() {
               { key: "bloccati", label: "Recall Bloccati", count: bloccati.length, badge: "r" },
               { key: "insoluti", label: "Insoluti", count: insoluti.length, badge: "r" },
               { key: "nc", label: "Note di Credito", count: nc.length, badge: "w" },
+              { key: "tasks", label: "Tasks & Alerts", count: paymentsTaskCount, badge: paymentsTaskCount > 0 ? "r" : "g" },
             ]}
           />
         </div>
@@ -79,6 +80,7 @@ export default function InvoicePage() {
         {tab === "bloccati" && <InvoicesBloccati />}
         {tab === "insoluti" && <InvoicesInsoluti />}
         {tab === "nc" && <InvoicesNoteCredito />}
+        {tab === "tasks" && <PaymentsTasksPanel />}
       </main>
 
       <IvaFab />
