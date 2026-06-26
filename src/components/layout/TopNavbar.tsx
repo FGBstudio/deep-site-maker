@@ -78,7 +78,7 @@ export function TopNavbar() {
     } else {
       navItems = [
         { title: "Admin Dashboard", url: "/ceo-dashboard", icon: Crown },
-        { title: "Projects", url: "/projects", icon: FolderKanban },
+        { title: "Operations", url: "/projects", icon: FolderKanban },
         { title: "Contacts", url: "/contacts", icon: ContactIcon },
         { title: "Tasks & Alerts", url: "/admin-tasks", icon: Inbox },
         { title: "Team Board", url: "/team-board", icon: Users },
@@ -176,7 +176,7 @@ export function TopNavbar() {
           {inProjects && (
             <>
               <span className="text-muted-foreground/50 mx-0.5">/</span>
-              <span className="text-foreground font-medium">Projects</span>
+              <span className="text-foreground font-medium">{isAdmin ? "Operations" : "Projects"}</span>
               {currentPage && (
                 <>
                   <span className="text-muted-foreground/50 mx-0.5">/</span>

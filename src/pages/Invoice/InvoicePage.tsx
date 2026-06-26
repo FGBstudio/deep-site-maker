@@ -11,6 +11,9 @@ import { InvoicesSolleciti } from "./tabs/InvoicesSolleciti";
 import { InvoicesBloccati } from "./tabs/InvoicesBloccati";
 import { InvoicesInsoluti } from "./tabs/InvoicesInsoluti";
 import { InvoicesNoteCredito } from "./tabs/InvoicesNoteCredito";
+import { PaymentsTasksPanel } from "./components/PaymentsTasksPanel";
+import { useAuth } from "@/contexts/AuthContext";
+import { useTaskAlerts } from "@/hooks/useTaskAlerts";
 
 const FUTURA: React.CSSProperties = {
   fontFamily: "'Futura','Futura PT','Century Gothic','Trebuchet MS',sans-serif",
@@ -19,6 +22,13 @@ const FUTURA: React.CSSProperties = {
 export default function InvoicePage() {
   const [tab, setTab] = useState<TabKey>("emesse");
   const { invoices, daEmettere, solleciti, bloccati, insoluti, nc } = useInvoiceStore();
+  const { user, role } = useAuth();
+  const { data: allAlerts = [] } = useTaskAlerts(role, user?.id);
+  const paymentsTaskCount = allAlerts.filter(
+    (a) =>
+      !a.is_resolved &&
+      ["quotation_to_payments", "billing_due", "extra_canone"].includes(a.alert_type)
+  ).length;
 
   const totNotPaid = invoices.filter((r) => r.state !== "Paid").reduce((s, r) => s + (r.notPaid || 0), 0);
   const sollAttivi = solleciti.filter((r) => r.status !== "pagato").length;
@@ -34,7 +44,7 @@ export default function InvoicePage() {
             className="text-foreground mb-4"
             style={{ ...FUTURA, fontSize: 20, letterSpacing: "0.09em", textTransform: "uppercase", fontWeight: 400 }}
           >
-            Fatturazione
+            Payments
           </h1>
 
           <KpiStrip
@@ -57,6 +67,7 @@ export default function InvoicePage() {
               { key: "bloccati", label: "Recall Bloccati", count: bloccati.length, badge: "r" },
               { key: "insoluti", label: "Insoluti", count: insoluti.length, badge: "r" },
               { key: "nc", label: "Note di Credito", count: nc.length, badge: "w" },
+              { key: "tasks", label: "Tasks & Alerts", count: paymentsTaskCount, badge: paymentsTaskCount > 0 ? "r" : "g" },
             ]}
           />
         </div>
@@ -69,6 +80,7 @@ export default function InvoicePage() {
         {tab === "bloccati" && <InvoicesBloccati />}
         {tab === "insoluti" && <InvoicesInsoluti />}
         {tab === "nc" && <InvoicesNoteCredito />}
+        {tab === "tasks" && <PaymentsTasksPanel />}
       </main>
 
       <IvaFab />

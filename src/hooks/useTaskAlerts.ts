@@ -16,7 +16,9 @@ export type TaskAlertType =
   | "monitoring_energy_ready_to_assign"
   | "budget_warning_80"
   | "budget_overrun"
-  | "resource_burnout_warning";
+  | "resource_burnout_warning"
+  | "quotation_to_operations"
+  | "quotation_to_payments";
 
 export interface TaskAlert {
   id: string;
@@ -52,6 +54,8 @@ const ALERT_TYPE_LABELS: Record<TaskAlertType, string> = {
   budget_warning_80: "Budget Warning 80%",
   budget_overrun: "Budget Overrun",
   resource_burnout_warning: "Resource Burnout",
+  quotation_to_operations: "Quotation → Operations",
+  quotation_to_payments: "Quotation → Payments",
 };
 
 const ALERT_TYPE_COLORS: Record<TaskAlertType, string> = {
@@ -69,6 +73,8 @@ const ALERT_TYPE_COLORS: Record<TaskAlertType, string> = {
   budget_warning_80: "bg-warning/10 text-warning border-warning/30",
   budget_overrun: "bg-destructive/10 text-destructive border-destructive/30",
   resource_burnout_warning: "bg-destructive/10 text-destructive border-destructive/30",
+  quotation_to_operations: "bg-primary/10 text-primary border-primary/30",
+  quotation_to_payments: "bg-success/10 text-success border-success/30",
 };
 
 export { ALERT_TYPE_LABELS, ALERT_TYPE_COLORS };
@@ -149,6 +155,8 @@ export function useTaskAlertCounts(role: AppRole | null, userId: string | undefi
       budget_warning_80: 0,
       budget_overrun: 0,
       resource_burnout_warning: 0,
+      quotation_to_operations: 0,
+      quotation_to_payments: 0,
     }
   );
 

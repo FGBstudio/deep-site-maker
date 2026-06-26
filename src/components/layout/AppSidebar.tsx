@@ -7,6 +7,8 @@ import {
   Settings,
   Crown,
   Inbox,
+  FileText,
+  Receipt,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -46,7 +48,9 @@ export function AppSidebar() {
   if (isAdmin) {
     mainNavItems = [
       { title: "CEO Dashboard", url: "/ceo-dashboard", icon: Crown },
-      { title: "All Projects", url: "/projects", icon: FolderKanban },
+      { title: "Operations", url: "/projects", icon: FolderKanban },
+      { title: "Quotations", url: "/quotations", icon: FileText },
+      { title: "Payments", url: "/invoice", icon: Receipt },
       { title: "Tasks", url: "/admin-tasks", icon: Inbox },
       { title: "Hardwares", url: "/hardwares", icon: Package },
       { title: "Supplier Orders", url: "/supplier-orders", icon: Truck },
