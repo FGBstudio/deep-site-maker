@@ -771,50 +771,27 @@ export default function Projects() {
                             </div>
                           )}
                         </td>
-                        {statusTab !== "quotation" && statusTab !== "canceled" && (
-                          <td className="p-4">
-                            {project.project_allocations.length === 0 ? (
-                              <span className="text-muted-foreground text-xs">None</span>
-                            ) : (
-                              <Badge variant="outline" className="text-xs">
-                                {project.project_allocations.length} items
-                              </Badge>
-                            )}
-                          </td>
-                        )}
-                        <td className="p-4 flex gap-2">
-                          {isQuotation ? (
-                            <>
-                              <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => openConfirm(project)}>
-                                <CheckSquare className="h-3 w-3" /> Confirmed
-                              </Button>
-                              <Button size="sm" variant="destructive" className="gap-1" onClick={() => handleCancel(project)}>
-                                <XCircle className="h-3 w-3" /> Canceled
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => openEdit(project)} className="gap-1">
-                                <Pencil className="h-3 w-3" /> Edit
-                              </Button>
-                            </>
-                          ) : isCanceled ? (
-                            <>
-                              <Button size="sm" variant="outline" onClick={() => navigate(`/projects/${project.id}`)} className="gap-1">
-                                <Eye className="h-3 w-3" /> Details
-                              </Button>
-                              {isAdmin && (
-                                <Button size="sm" variant="destructive" className="gap-1" onClick={() => setHardDeleteProject(project)}>
-                                  <Trash2 className="h-3 w-3" /> Delete Permanently
-                                </Button>
-                              )}
-                            </>
+                        <td className="p-4">
+                          {project.project_allocations.length === 0 ? (
+                            <span className="text-muted-foreground text-xs">None</span>
                           ) : (
-                            <>
-                              <Button size="sm" variant="outline" onClick={() => navigate(`/projects/${project.id}`)} className="gap-1">
-                                <Eye className="h-3 w-3" /> Details
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => openEdit(project)} className="gap-1">
-                                <Pencil className="h-3 w-3" /> Edit
-                              </Button>
-                            </>
+                            <Badge variant="outline" className="text-xs">
+                              {project.project_allocations.length} items
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="p-4 flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => navigate(`/projects/${project.id}`)} className="gap-1">
+                            <Eye className="h-3 w-3" /> Details
+                          </Button>
+                          {project.setup_status === "da_configurare" && !project.pm_id ? (
+                            <Button size="sm" className="gap-1" onClick={() => openEdit(project)}>
+                              <UserPlus className="h-3 w-3" /> Assign PM
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(project)} className="gap-1">
+                              <Pencil className="h-3 w-3" /> Edit
+                            </Button>
                           )}
                         </td>
                       </tr>
@@ -832,11 +809,7 @@ export default function Projects() {
         </TabsContent>
       </Tabs>
 
-      <NewQuotationWizard
-        open={wizardOpen}
-        onOpenChange={setWizardOpen}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: ["admin-planner-all-certifications"] })}
-      />
+
 
       <ProjectFormModal
         open={modalOpen}
