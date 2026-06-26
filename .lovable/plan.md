@@ -1,31 +1,59 @@
-## Audit della specifica vs codice attuale
+## Obiettivo
 
-Ho controllato tutti i punti della specifica. **Quasi tutto è già implementato**. Riepilogo:
+Spostare totalmente la gestione del ciclo "Pending → Approved / Canceled" delle quotazioni dentro la sezione **Quotations**, e lasciare a **Operations** solo i progetti già approvati con l'azione "Assegna PM".
 
-### ✅ Già implementato
-| Punto spec | Stato | File |
-|---|---|---|
-| Rename Projects→Operations (admin) / Projects (PM) in Home | ✅ | `src/lib/hubSections.ts` (`getSectionDisplayName`), `src/pages/Home.tsx` |
-| Rename Invoice→Payments (Home, Sidebar, InvoicePage) | ✅ | `hubSections.ts`, `AppSidebar.tsx`, `InvoicePage.tsx` |
-| Voce "Operations" / "Payments" / "Quotations" in Sidebar | ✅ | `src/components/layout/AppSidebar.tsx` |
-| Nuova PittoCard "Quotations" colore `#a0d5d6`, route `/quotations` | ✅ | `hubSections.ts` |
-| Route `/quotations` protetta (ADMIN) | ✅ | `src/App.tsx` |
-| RBAC: per ora solo ADMIN accesso totale, PM come prima | ✅ | `ProtectedRoute`, `App.tsx` (costanti `QUOTATIONS_ROLES`/`PAYMENTS_ROLES`/`OPERATIONS_ROLES` predisposte per i futuri sotto-ruoli) |
-| Pagina `/quotations` con tab Pending/Approved + wizard | ✅ | `src/pages/Quotations.tsx` |
-| Bottone "Mark as Approved" che invoca edge function | ✅ | `src/pages/Quotations.tsx` |
-| Edge function `approve-quotation` con inserimento 2 task_alerts (operations + payments handover) | ✅ | `supabase/functions/approve-quotation/index.ts` |
-| Tipi alert `quotation_to_operations` / `quotation_to_payments` | ✅ | `src/hooks/useTaskAlerts.ts` |
-| Tab "Tasks & Alerts" in Payments | ✅ | `InvoicePage.tsx` + `PaymentsTasksPanel.tsx` |
-| Migration `quotation_approved_at` / `quotation_approved_by` | ✅ | `20260626084554_*.sql` |
+## Stato attuale
 
-### ❌ Unica cosa rimasta da pulire
-Il file `src/pages/Projects.tsx` ha rimosso il **bottone** "New Quotation" (riga 201 lo commenta), ma lascia ancora montato `<NewQuotationWizard>` con import + `wizardOpen` state inutili (righe 7, 48, 395-399). Codice morto: nessun setter lo apre, ma è meglio rimuoverlo per coerenza con la spec ("rimosso totalmente") e per non confondere chi legge.
+- `Quotations` (`src/pages/Quotations.tsx`): ha 2 tab (Pending / Approved), bottone "Mark as Approved" che chiama `approve-quotation`. **Manca** azione Cancel e tab Canceled.
+- `Operations` (`src/pages/Projects.tsx`, tab Projects): mostra la tab "Quotation" con bottoni **Confirmed** + **Canceled** + **Edit**, e una tab "Canceled". È qui che oggi si gestisce tutto il flusso quotazione, **duplicato** rispetto a Quotations.
 
-## Implementazione (1 file)
+## Modifiche
 
-**`src/pages/Projects.tsx`** — rimuovere:
-- `import { NewQuotationWizard } from "@/components/projects/NewQuotationWizard"` (riga 7)
-- `const [wizardOpen, setWizardOpen] = useState(false)` (riga 48) e relativo commento
-- blocco `<NewQuotationWizard open={wizardOpen} ... />` (righe 395-399)
+### 1. `src/pages/Quotations.tsx` — diventa il proprietario del flusso
 
-Nessuna altra modifica necessaria: la spec è già completata.
+- Aggiungere terzo tab **"Canceled"** accanto a Pending / Approved.
+- Su ogni riga **Pending**, aggiungere:
+  - bottone **"Mark as Approved"** (esistente) → invoca `approve-quotation`.
+  - bottone **"Cancel"** (rosso) → apre piccolo dialog con textarea opzionale "Reason for cancellation", poi invoca nuova edge function `cancel-quotation` (vedi §3) che setta `status='canceled'`, `quotation_canceled_at`, `quotation_canceled_by`, `quotation_cancel_reason`.
+- Filtro liste:
+  - Pending: `status = 'quotation'`
+  - Approved: `status NOT IN ('quotation','canceled')` (come oggi)
+  - Canceled: `status = 'canceled'` — mostra colonne Project / Client / Region / Total Fees / Canceled date / Reason (read-only, nessuna azione, solo "Details").
+- Nota: già esiste `wizardOpen` + `NewQuotationWizard` per creare nuove quotazioni → lasciato com'è.
+
+### 2. `src/pages/Projects.tsx` (Operations) — pulizia ruoli
+
+- **Rimuovere** la status-tab **"Quotation"** dalla `TabsList` (riga 549-551) e dai counters.
+- **Rimuovere** la status-tab **"Canceled"** dalla `TabsList` (riga 564-566) e dai counters.
+- **Rimuovere** dal `baseFiltered`/render i progetti con `setup_status IN ('quotation','canceled')` (anche dal tab "All" Operations non li deve vedere — sono di pertinenza Quotations).
+- Nel render azioni riga (riga 811-845): eliminare interamente il ramo `isQuotation` (bottoni Confirmed / Canceled / Edit-quotation) e il ramo `isCanceled` (Delete Permanently). Restano solo Details + Edit per i progetti attivi.
+- Rimuovere `handleCancel`, `openConfirm`, `hardDeleteProject` e relativo `AlertDialog` (non più necessari qui).
+- Rimuovere import `NewQuotationWizard` + stato `wizardOpen` + bottone "New" + il componente montato (la creazione di quotazioni avviene SOLO in Quotations).
+- L'azione **"Assign PM"** è già coperta dal flusso esistente: i progetti `da_configurare` vengono editati con `openEdit` → `ProjectFormModal` che assegna il PM. Niente da aggiungere lato UI, ma rinominare il bottone "Edit" in **"Assign PM"** per le righe con `setup_status='da_configurare'` e `pm_id` nullo, per chiarezza. (Il modal esistente già gestisce assegnazione PM e campi correlati.)
+
+### 3. Database + edge function
+
+Migration:
+```sql
+ALTER TABLE public.certifications
+  ADD COLUMN IF NOT EXISTS quotation_canceled_at timestamptz,
+  ADD COLUMN IF NOT EXISTS quotation_canceled_by uuid REFERENCES auth.users(id),
+  ADD COLUMN IF NOT EXISTS quotation_cancel_reason text;
+```
+
+Nuova edge function `supabase/functions/cancel-quotation/index.ts`:
+- Auth: solo ADMIN (stesso pattern di `approve-quotation`).
+- Input: `{ certification_id: string, reason?: string }`.
+- Effetto: `status='canceled'`, `quotation_canceled_at=now()`, `quotation_canceled_by=user`, `quotation_cancel_reason=reason`.
+- Nessun `task_alert` emesso (l'opposto di approve).
+
+### 4. `useAdminPlannerData` / contatori Operations
+
+Verificare/aggiornare il fetch in modo che la lista "Operations" filtri di default `status NOT IN ('quotation','canceled')`, così:
+- KPI / Timeline / Forecast Operations non considerano più quotazioni e cancellate.
+- Quotations.tsx continua a vedere tutto (usa già una propria query separata).
+
+## Risultato
+
+- **Quotations**: unico posto dove si crea, approva o cancella una quotazione; 3 tab Pending / Approved / Canceled con storico + reason.
+- **Operations**: vede solo progetti con quotazione approvata, può solo assegnare PM e gestire ciclo operativo. Nessun bottone Cancel, nessun tab Quotation/Canceled.
