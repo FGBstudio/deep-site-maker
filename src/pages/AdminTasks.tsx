@@ -45,6 +45,8 @@ const TYPE_ICONS: Record<TaskAlertType, typeof AlertTriangle> = {
   budget_warning_80: Gauge,
   budget_overrun: Flame,
   resource_burnout_warning: BatteryWarning,
+  quotation_to_operations: FolderKanban,
+  quotation_to_payments: Receipt,
 };
 
 export default function AdminTasks() {
