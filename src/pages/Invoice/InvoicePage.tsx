@@ -34,7 +34,7 @@ export default function InvoicePage() {
             className="text-foreground mb-4"
             style={{ ...FUTURA, fontSize: 20, letterSpacing: "0.09em", textTransform: "uppercase", fontWeight: 400 }}
           >
-            Fatturazione
+            Payments
           </h1>
 
           <KpiStrip
