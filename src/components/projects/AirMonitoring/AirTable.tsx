@@ -545,7 +545,7 @@ export function AirTable() {
       } else if (field === 'air_product_ids') {
         const { error } = await supabase
           .from('site_air_records')
-          .update({ air_product_ids: value })
+          .update({ air_product_ids: value } as unknown as never)
           .eq('site_id', siteId);
         if (error) throw error;
       } else {
