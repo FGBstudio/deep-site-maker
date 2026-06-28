@@ -29,6 +29,7 @@ import type { Project, ProjectAllocation } from "@/types/custom-tables";
 
 const SETUP_STATUS_META = {
   quotation: { label: "Quotation", icon: FileText, className: "border-blue-400/30 bg-blue-50 text-blue-600" },
+  quotation_approved: { label: "Quotation Approved", icon: FileText, className: "border-emerald-400/30 bg-emerald-50 text-emerald-700" },
   da_configurare: { label: "To Configure", icon: AlertTriangle, className: "border-warning/30 bg-warning/10 text-warning" },
   in_corso: { label: "In Progress", icon: Clock3, className: "border-primary/30 bg-primary/10 text-primary" },
   completato: { label: "Completed", icon: CheckSquare, className: "border-violet-400/30 bg-violet-50 text-violet-700" },
