@@ -29,6 +29,7 @@ import type { Project, ProjectAllocation } from "@/types/custom-tables";
 
 const SETUP_STATUS_META = {
   quotation: { label: "Quotation", icon: FileText, className: "border-blue-400/30 bg-blue-50 text-blue-600" },
+  quotation_approved: { label: "Quotation Approved", icon: FileText, className: "border-emerald-400/30 bg-emerald-50 text-emerald-700" },
   da_configurare: { label: "To Configure", icon: AlertTriangle, className: "border-warning/30 bg-warning/10 text-warning" },
   in_corso: { label: "In Progress", icon: Clock3, className: "border-primary/30 bg-primary/10 text-primary" },
   completato: { label: "Completed", icon: CheckSquare, className: "border-violet-400/30 bg-violet-50 text-violet-700" },
@@ -462,13 +463,14 @@ export default function Projects() {
   }, [filtered, sortConfig]);
 
   const counts = useMemo(() => ({
+    quotation_approved: allProjects.filter((p) => p.setup_status === "quotation_approved").length,
     da_configurare: allProjects.filter((p) => p.setup_status === "da_configurare").length,
     in_corso: allProjects.filter((p) => p.setup_status === "in_corso").length,
     completato: allProjects.filter((p) => (p.setup_status as string) === "completato").length,
     certificato: allProjects.filter((p) => p.setup_status === "certificato").length,
   }), [allProjects]);
 
-  const operationsTotal = counts.da_configurare + counts.in_corso + counts.completato + counts.certificato;
+  const operationsTotal = counts.quotation_approved + counts.da_configurare + counts.in_corso + counts.completato + counts.certificato;
 
   const openEdit = async (project: AdminPlannerProject) => {
     const { data } = await supabase
@@ -524,8 +526,11 @@ export default function Projects() {
         <TabsContent value="projects" className="space-y-6">
           {/* Status category tabs */}
           <Tabs value={statusTab} onValueChange={setStatusTab} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="all">All ({operationsTotal})</TabsTrigger>
+              <TabsTrigger value="quotation_approved" className="gap-1.5">
+                <FileText className="h-3.5 w-3.5" /> Quotations Approved ({counts.quotation_approved})
+              </TabsTrigger>
               <TabsTrigger value="da_configurare" className="gap-1.5">
                 <AlertTriangle className="h-3.5 w-3.5" /> To Configure ({counts.da_configurare})
               </TabsTrigger>
@@ -783,7 +788,20 @@ export default function Projects() {
                           <Button size="sm" variant="outline" onClick={() => navigate(`/projects/${project.id}`)} className="gap-1">
                             <Eye className="h-3 w-3" /> Details
                           </Button>
-                          {project.setup_status === "da_configurare" && !project.pm_id ? (
+                          {project.setup_status === "quotation_approved" ? (
+                            <Button size="sm" className="gap-1" onClick={async () => {
+                              const { data } = await supabase
+                                .from("project_allocations" as any)
+                                .select("*")
+                                .eq("certification_id", project.id);
+                              setEditProject(project as any);
+                              setEditAllocations((data || []) as any);
+                              setModalMode("confirm_project");
+                              setModalOpen(true);
+                            }}>
+                              <UserPlus className="h-3 w-3" /> Assign to PM
+                            </Button>
+                          ) : project.setup_status === "da_configurare" && !project.pm_id ? (
                             <Button size="sm" className="gap-1" onClick={() => openEdit(project)}>
                               <UserPlus className="h-3 w-3" /> Assign PM
                             </Button>

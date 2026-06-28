@@ -1,59 +1,48 @@
-## Obiettivo
 
-Spostare totalmente la gestione del ciclo "Pending → Approved / Canceled" delle quotazioni dentro la sezione **Quotations**, e lasciare a **Operations** solo i progetti già approvati con l'azione "Assegna PM".
+## Goal
 
-## Stato attuale
+Aggiungere uno stato intermedio tra Quotations e Operations. Quando l'utente clicca "Mark as Approved" in Quotations, il progetto NON va più direttamente in "To Configure", ma entra in una nuova sezione "Quotations Approved" dentro Operations, dove l'utente Operations può solo assegnare il PM (con i campi correlati). Solo dopo l'assegnazione del PM il progetto passa in "To Configure" e prosegue il flusso normale.
 
-- `Quotations` (`src/pages/Quotations.tsx`): ha 2 tab (Pending / Approved), bottone "Mark as Approved" che chiama `approve-quotation`. **Manca** azione Cancel e tab Canceled.
-- `Operations` (`src/pages/Projects.tsx`, tab Projects): mostra la tab "Quotation" con bottoni **Confirmed** + **Canceled** + **Edit**, e una tab "Canceled". È qui che oggi si gestisce tutto il flusso quotazione, **duplicato** rispetto a Quotations.
+## Cambi funzionali
 
-## Modifiche
-
-### 1. `src/pages/Quotations.tsx` — diventa il proprietario del flusso
-
-- Aggiungere terzo tab **"Canceled"** accanto a Pending / Approved.
-- Su ogni riga **Pending**, aggiungere:
-  - bottone **"Mark as Approved"** (esistente) → invoca `approve-quotation`.
-  - bottone **"Cancel"** (rosso) → apre piccolo dialog con textarea opzionale "Reason for cancellation", poi invoca nuova edge function `cancel-quotation` (vedi §3) che setta `status='canceled'`, `quotation_canceled_at`, `quotation_canceled_by`, `quotation_cancel_reason`.
-- Filtro liste:
-  - Pending: `status = 'quotation'`
-  - Approved: `status NOT IN ('quotation','canceled')` (come oggi)
-  - Canceled: `status = 'canceled'` — mostra colonne Project / Client / Region / Total Fees / Canceled date / Reason (read-only, nessuna azione, solo "Details").
-- Nota: già esiste `wizardOpen` + `NewQuotationWizard` per creare nuove quotazioni → lasciato com'è.
-
-### 2. `src/pages/Projects.tsx` (Operations) — pulizia ruoli
-
-- **Rimuovere** la status-tab **"Quotation"** dalla `TabsList` (riga 549-551) e dai counters.
-- **Rimuovere** la status-tab **"Canceled"** dalla `TabsList` (riga 564-566) e dai counters.
-- **Rimuovere** dal `baseFiltered`/render i progetti con `setup_status IN ('quotation','canceled')` (anche dal tab "All" Operations non li deve vedere — sono di pertinenza Quotations).
-- Nel render azioni riga (riga 811-845): eliminare interamente il ramo `isQuotation` (bottoni Confirmed / Canceled / Edit-quotation) e il ramo `isCanceled` (Delete Permanently). Restano solo Details + Edit per i progetti attivi.
-- Rimuovere `handleCancel`, `openConfirm`, `hardDeleteProject` e relativo `AlertDialog` (non più necessari qui).
-- Rimuovere import `NewQuotationWizard` + stato `wizardOpen` + bottone "New" + il componente montato (la creazione di quotazioni avviene SOLO in Quotations).
-- L'azione **"Assign PM"** è già coperta dal flusso esistente: i progetti `da_configurare` vengono editati con `openEdit` → `ProjectFormModal` che assegna il PM. Niente da aggiungere lato UI, ma rinominare il bottone "Edit" in **"Assign PM"** per le righe con `setup_status='da_configurare'` e `pm_id` nullo, per chiarezza. (Il modal esistente già gestisce assegnazione PM e campi correlati.)
-
-### 3. Database + edge function
-
-Migration:
-```sql
-ALTER TABLE public.certifications
-  ADD COLUMN IF NOT EXISTS quotation_canceled_at timestamptz,
-  ADD COLUMN IF NOT EXISTS quotation_canceled_by uuid REFERENCES auth.users(id),
-  ADD COLUMN IF NOT EXISTS quotation_cancel_reason text;
+```text
+Quotations (Pending)
+   └─ Mark as Approved ──► Operations / "Quotations Approved" (NEW tab)
+                              └─ Assign to PM (+ PO date, allocated hours, coord.)
+                                    └─► Operations / "To Configure"
+                                          └─ PM configura timeline → "In Progress" → ...
 ```
 
-Nuova edge function `supabase/functions/cancel-quotation/index.ts`:
-- Auth: solo ADMIN (stesso pattern di `approve-quotation`).
-- Input: `{ certification_id: string, reason?: string }`.
-- Effetto: `status='canceled'`, `quotation_canceled_at=now()`, `quotation_canceled_by=user`, `quotation_cancel_reason=reason`.
-- Nessun `task_alert` emesso (l'opposto di approve).
+- Nuovo valore di stato `quotation_approved` sulla certification.
+- Operations non vede più la propria "Quotations" interna (già rimossa): adesso vede invece "Quotations Approved" come tab subito dopo "All".
 
-### 4. `useAdminPlannerData` / contatori Operations
+## Modifiche tecniche
 
-Verificare/aggiornare il fetch in modo che la lista "Operations" filtri di default `status NOT IN ('quotation','canceled')`, così:
-- KPI / Timeline / Forecast Operations non considerano più quotazioni e cancellate.
-- Quotations.tsx continua a vedere tutto (usa già una propria query separata).
+1. **Edge function `approve-quotation`**  
+   - Cambia il target status da `da_configurare` → `quotation_approved`.  
+   - Mantiene gli alert `quotation_to_operations` (Assign PM) e `quotation_to_payments`.
 
-## Risultato
+2. **`src/hooks/useAdminPlannerData.ts`**  
+   - Aggiunge `quotation_approved` all'early-exit (come `quotation`/`canceled`) così non viene riclassificato in `da_configurare`. `setup_status` resta `quotation_approved`.
 
-- **Quotations**: unico posto dove si crea, approva o cancella una quotazione; 3 tab Pending / Approved / Canceled con storico + reason.
-- **Operations**: vede solo progetti con quotazione approvata, può solo assegnare PM e gestire ciclo operativo. Nessun bottone Cancel, nessun tab Quotation/Canceled.
+3. **`src/pages/Projects.tsx`**  
+   - Aggiunge `quotation_approved` a `SETUP_STATUS_META` (label "Quotation Approved", icona `FileText`, stile verde tenue).  
+   - In `baseFiltered`: rimuove `quotation_approved` dall'esclusione (resta esclusi solo `quotation` e `canceled`).  
+   - Aggiunge tab `quotation_approved` nella `TabsList`, subito dopo "All": "Quotations Approved (N)".  
+   - `operationsTotal` include `counts.quotation_approved`.  
+   - Per le righe con `setup_status === 'quotation_approved'`, il pulsante diventa **"Assign to PM"** e apre `ProjectFormModal` in modalità `confirm_project` (stesso modulo già usato in passato per assegnare PM + PO date + allocated hours + coordinate sito).
+
+4. **`src/components/projects/ProjectFormModal.tsx`** (mode `confirm_project`)  
+   - Quando il progetto di partenza è `quotation_approved`, il salvataggio aggiorna `pm_id`, `po_sign_date`, `allocated_hours`, coord. sito **e** imposta `status = 'da_configurare'` (non più `in_progress`), così la derivazione di `useAdminPlannerData` lo porta nella tab "To Configure".
+
+5. **Quotations page**  
+   - Nessuna modifica al pulsante "Mark as Approved": continua a invocare l'edge function `approve-quotation`. La tab "Approved" qui resta come storico (filtro `status !== 'quotation' && status !== 'canceled'`, che continua a coprire `quotation_approved` e tutti gli stati successivi).
+
+## File toccati
+
+- `supabase/functions/approve-quotation/index.ts`
+- `src/hooks/useAdminPlannerData.ts`
+- `src/pages/Projects.tsx`
+- `src/components/projects/ProjectFormModal.tsx`
+
+Nessuna migration: `certifications.status` è una text column libera, basta usare il nuovo valore stringa.
