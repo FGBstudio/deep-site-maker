@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 import { z } from "npm:zod@3.23.8";
 
 const BodySchema = z.object({
@@ -90,12 +91,19 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const { data: userData, error: userError } = await adminClient.auth.getUser(token);
-    if (userError || !userData.user?.id) {
+    let userId: string;
+    try {
+      const jwks = createRemoteJWKSet(new URL(`${targetSupabaseUrl}/auth/v1/.well-known/jwks.json`));
+      const { payload } = await jwtVerify(token, jwks, {
+        issuer: `${targetSupabaseUrl}/auth/v1`,
+      });
+      if (typeof payload.sub !== "string" || !payload.sub) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+      userId = payload.sub;
+    } catch {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
-
-    const userId = userData.user.id;
 
     const { data: roleRow, error: roleError } = await adminClient
       .from("user_roles")
