@@ -130,9 +130,9 @@ export default function Quotations() {
 
   const refreshApprovedSources = async () => {
     await Promise.all([
-      qc.refetchQueries({ queryKey: ["quotations-list"] }),
-      qc.refetchQueries({ queryKey: ["admin-planner-all-certifications"] }),
-      qc.refetchQueries({ queryKey: ["task-alerts"] }),
+      qc.refetchQueries({ queryKey: ["quotations-list"], type: "all" }),
+      qc.refetchQueries({ queryKey: ["admin-planner-all-certifications"], type: "all" }),
+      qc.refetchQueries({ queryKey: ["task-alerts"], type: "all" }),
     ]);
   };
 
