@@ -27,6 +27,12 @@ interface QuotationRow {
   status: string;
 }
 
+interface QuotationApprovalUpdate {
+  status: "quotation_approved";
+  quotation_approved_at: string;
+  quotation_approved_by: string | null;
+}
+
 function useQuotations() {
   return useQuery({
     queryKey: ["quotations-list"],
@@ -78,15 +84,22 @@ export default function Quotations() {
   const handleApprove = async (id: string) => {
     setApprovingId(id);
     try {
-      const { error } = await supabase
+      const approvalUpdate: QuotationApprovalUpdate = {
+        status: "quotation_approved",
+        quotation_approved_at: new Date().toISOString(),
+        quotation_approved_by: user?.id ?? null,
+      };
+
+      const { data, error } = await supabase
         .from("certifications")
-        .update({
-          status: "quotation_approved",
-          quotation_approved_at: new Date().toISOString(),
-          quotation_approved_by: user?.id ?? null,
-        } as any)
-        .eq("id", id);
+        .update(approvalUpdate)
+        .eq("id", id)
+        .select("id, status, quotation_approved_at")
+        .single();
       if (error) throw error;
+      if (!data || data.status !== "quotation_approved") {
+        throw new Error("The quotation was not updated in the database.");
+      }
       toast({
         title: "Quotation approved",
         description: "Moved to Operations › Quotations Approved.",
